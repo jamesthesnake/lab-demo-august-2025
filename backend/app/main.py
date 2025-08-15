@@ -2,6 +2,7 @@
 Main FastAPI Application
 Central API server for AIDO-Lab
 """
+from app.routes import chat
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,14 +113,16 @@ async def lifespan(app: FastAPI):
     
     git_service = GitService(workspace_base=workspace_base)
     
-    # Only initialize LLM service if API key is provided
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key and api_key != "your-openai-key-here" and api_key != "":
+    # Initialize LLM service - try Anthropic first, then OpenAI
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    if anthropic_key and anthropic_key != "your-anthropic-key-here" and anthropic_key != "":
         try:
             llm_service = LLMService(
-                provider=LLMProvider.OPENAI,
-                api_key=api_key,
-                model=os.getenv("LLM_MODEL", "gpt-4-turbo-preview"),
+                provider=LLMProvider.ANTHROPIC,
+                api_key=anthropic_key,
+                model="claude-3-5-sonnet-20241022",
                 temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
                 max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2000"))
             )
@@ -127,12 +130,34 @@ async def lifespan(app: FastAPI):
             # Check LLM API status
             api_status = await llm_service.check_api_status()
             if not api_status:
-                logger.warning("LLM API is not available. Natural language features will be limited.")
+                logger.warning("Anthropic API is not available. Trying OpenAI...")
+                raise Exception("Anthropic API check failed")
+            else:
+                logger.info("LLM service initialized with Anthropic Claude")
         except Exception as e:
-            logger.warning(f"Failed to initialize LLM service: {e}")
+            logger.warning(f"Failed to initialize Anthropic LLM service: {e}")
+            llm_service = None
+    elif openai_key and openai_key != "your-openai-key-here" and openai_key != "":
+        try:
+            llm_service = LLMService(
+                provider=LLMProvider.OPENAI,
+                api_key=openai_key,
+                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
+                max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2000"))
+            )
+            
+            # Check LLM API status
+            api_status = await llm_service.check_api_status()
+            if not api_status:
+                logger.warning("OpenAI API is not available. Natural language features will be limited.")
+            else:
+                logger.info("LLM service initialized with OpenAI")
+        except Exception as e:
+            logger.warning(f"Failed to initialize OpenAI LLM service: {e}")
             llm_service = None
     else:
-        logger.warning("OpenAI API key not configured. Natural language features disabled.")
+        logger.warning("No LLM API keys configured. Natural language features disabled.")
         llm_service = None
     
     session_manager = SessionManager()
@@ -152,6 +177,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+app.include_router(chat.router)
 
 # Configure CORS
 app.add_middleware(

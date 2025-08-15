@@ -329,7 +329,7 @@ class KernelManager:
         
         logger.info(f"Kernel {kernel_id} ready for session {session_id}")
         return kernel_id
-        async def execute_code(self, code: str, timeout: int = 30) -> Dict[str, Any]:
+    async def execute_code(self, code: str, timeout: int = 30) -> Dict[str, Any]:
         """
         Execute code and return structured results
         Compatible with LLM tool calling
