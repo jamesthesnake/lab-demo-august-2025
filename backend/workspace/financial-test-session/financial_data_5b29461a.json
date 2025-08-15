@@ -1,0 +1,73 @@
+{
+  "companies": [
+    {
+      "symbol": "TECH",
+      "name": "TechCorp Inc",
+      "sector": "Technology",
+      "market_cap": 150000000000,
+      "stock_prices": [
+        {"date": "2024-01-01", "open": 145.50, "high": 148.20, "low": 144.10, "close": 147.80, "volume": 2500000},
+        {"date": "2024-01-02", "open": 147.80, "high": 151.30, "low": 146.90, "close": 150.25, "volume": 3200000},
+        {"date": "2024-01-03", "open": 150.25, "high": 152.80, "low": 149.40, "close": 151.60, "volume": 2800000},
+        {"date": "2024-01-04", "open": 151.60, "high": 154.20, "low": 150.80, "close": 153.45, "volume": 3100000},
+        {"date": "2024-01-05", "open": 153.45, "high": 155.90, "low": 152.30, "close": 154.70, "volume": 2900000}
+      ],
+      "financials": {
+        "revenue": 85000000000,
+        "net_income": 12000000000,
+        "total_assets": 95000000000,
+        "total_debt": 15000000000,
+        "cash": 25000000000
+      }
+    },
+    {
+      "symbol": "HEAL",
+      "name": "HealthPlus Corp",
+      "sector": "Healthcare",
+      "market_cap": 75000000000,
+      "stock_prices": [
+        {"date": "2024-01-01", "open": 89.20, "high": 91.50, "low": 88.60, "close": 90.80, "volume": 1800000},
+        {"date": "2024-01-02", "open": 90.80, "high": 93.20, "low": 90.10, "close": 92.45, "volume": 2100000},
+        {"date": "2024-01-03", "open": 92.45, "high": 94.80, "low": 91.90, "close": 93.60, "volume": 1950000},
+        {"date": "2024-01-04", "open": 93.60, "high": 95.30, "low": 92.80, "close": 94.75, "volume": 2200000},
+        {"date": "2024-01-05", "open": 94.75, "high": 96.40, "low": 94.20, "close": 95.85, "volume": 2000000}
+      ],
+      "financials": {
+        "revenue": 45000000000,
+        "net_income": 8000000000,
+        "total_assets": 52000000000,
+        "total_debt": 8000000000,
+        "cash": 12000000000
+      }
+    },
+    {
+      "symbol": "BANK",
+      "name": "MegaBank Corp",
+      "sector": "Financial",
+      "market_cap": 120000000000,
+      "stock_prices": [
+        {"date": "2024-01-01", "open": 65.30, "high": 67.20, "low": 64.80, "close": 66.90, "volume": 4500000},
+        {"date": "2024-01-02", "open": 66.90, "high": 68.50, "low": 66.20, "close": 67.80, "volume": 4200000},
+        {"date": "2024-01-03", "open": 67.80, "high": 69.10, "low": 67.30, "close": 68.45, "volume": 3800000},
+        {"date": "2024-01-04", "open": 68.45, "high": 70.20, "low": 68.00, "close": 69.60, "volume": 4100000},
+        {"date": "2024-01-05", "open": 69.60, "high": 71.30, "low": 69.10, "close": 70.85, "volume": 3900000}
+      ],
+      "financials": {
+        "revenue": 35000000000,
+        "net_income": 15000000000,
+        "total_assets": 450000000000,
+        "total_debt": 25000000000,
+        "cash": 35000000000
+      }
+    }
+  ],
+  "market_indices": {
+    "SP500": [
+      {"date": "2024-01-01", "value": 4750.20},
+      {"date": "2024-01-02", "value": 4768.90},
+      {"date": "2024-01-03", "value": 4785.40},
+      {"date": "2024-01-04", "value": 4792.60},
+      {"date": "2024-01-05", "value": 4801.30}
+    ]
+  }
+}

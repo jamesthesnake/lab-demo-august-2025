@@ -1,0 +1,29 @@
+Date,Product,Category,Sales,Revenue,Region,Customer_Segment
+2024-01-01,Laptop Pro,Electronics,45,67500,North,Enterprise
+2024-01-01,Wireless Mouse,Electronics,120,2400,North,Consumer
+2024-01-01,Office Chair,Furniture,30,9000,South,Enterprise
+2024-01-02,Laptop Pro,Electronics,52,78000,West,Enterprise
+2024-01-02,Desk Lamp,Furniture,85,4250,East,Consumer
+2024-01-02,Keyboard,Electronics,95,4750,North,Consumer
+2024-01-03,Monitor 27",Electronics,38,19000,South,Enterprise
+2024-01-03,Standing Desk,Furniture,22,13200,West,Enterprise
+2024-01-03,Wireless Mouse,Electronics,145,2900,East,Consumer
+2024-01-04,Laptop Pro,Electronics,61,91500,North,Enterprise
+2024-01-04,Office Chair,Furniture,41,12300,South,Enterprise
+2024-01-04,Desk Lamp,Furniture,92,4600,West,Consumer
+2024-01-05,Keyboard,Electronics,78,3900,East,Consumer
+2024-01-05,Monitor 27",Electronics,44,22000,North,Enterprise
+2024-01-05,Standing Desk,Furniture,28,16800,South,Enterprise
+2024-01-06,Wireless Mouse,Electronics,134,2680,West,Consumer
+2024-01-06,Laptop Pro,Electronics,49,73500,East,Enterprise
+2024-01-06,Office Chair,Furniture,35,10500,North,Enterprise
+2024-01-07,Desk Lamp,Furniture,88,4400,South,Consumer
+2024-01-07,Keyboard,Electronics,101,5050,West,Consumer
+2024-01-08,Monitor 27",Electronics,41,20500,East,Enterprise
+2024-01-08,Standing Desk,Furniture,31,18600,North,Enterprise
+2024-01-08,Wireless Mouse,Electronics,127,2540,South,Consumer
+2024-01-09,Laptop Pro,Electronics,55,82500,West,Enterprise
+2024-01-09,Office Chair,Furniture,39,11700,East,Enterprise
+2024-01-10,Desk Lamp,Furniture,96,4800,North,Consumer
+2024-01-10,Keyboard,Electronics,83,4150,South,Consumer
+2024-01-10,Monitor 27",Electronics,47,23500,West,Enterprise

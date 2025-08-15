@@ -135,9 +135,16 @@ When creating visualizations:
             if not self.api_key:
                 raise ValueError("OpenAI API key not provided")
             
+            # Fixed initialization without proxies
             self.client = AsyncOpenAI(api_key=self.api_key)
-            self.model = model or "gpt-4-turbo-preview"
-            self.tokenizer = tiktoken.encoding_for_model(self.model)
+            self.model = model or "gpt-4o-mini"  # Changed to gpt-4o-mini
+            
+            # Only initialize tokenizer if tiktoken is available
+            try:
+                import tiktoken
+                self.tokenizer = tiktoken.encoding_for_model("gpt-4-turbo")  # Use a known model
+            except:
+                self.tokenizer = None
             
         elif provider == LLMProvider.ANTHROPIC:
             self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")

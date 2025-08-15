@@ -76,8 +76,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ sessionId, onCodeI
 
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.assistant_message.content || '(No response)',
-        tool_results: data.tool_results,
+        content: data.assistant_message || '(No response)',
+        tool_results: data.tool_results ? {
+          stdout: data.tool_results.stdout || '',
+          stderr: data.tool_results.stderr || '',
+          artifacts: data.artifacts || []
+        } : undefined,
         timestamp: new Date().toISOString()
       };
 
@@ -175,22 +179,49 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ sessionId, onCodeI
                   )}
                   
                   {message.tool_results.artifacts.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="mt-4 space-y-3">
                       {message.tool_results.artifacts.map((artifact, i) => (
-                        <a
-                          key={i}
-                          href={artifact}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 px-3 py-1 bg-gray-700 rounded text-xs text-gray-300 hover:bg-gray-600"
-                        >
-                          {artifact.endsWith('.png') || artifact.endsWith('.jpg') ? (
-                            <Image className="w-3 h-3" />
+                        <div key={i} className="border border-gray-600 rounded-lg overflow-hidden">
+                          {artifact.endsWith('.png') || artifact.endsWith('.jpg') || artifact.endsWith('.jpeg') || artifact.endsWith('.gif') ? (
+                            <div className="bg-white p-2">
+                              <img 
+                                src={`http://localhost:8000${artifact}`}
+                                alt={`Generated plot ${i + 1}`}
+                                className="max-w-full h-auto rounded"
+                                onError={(e) => {
+                                  console.error('Failed to load image:', artifact);
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                              <div className="flex items-center justify-between mt-2 text-xs text-gray-600">
+                                <span className="flex items-center gap-1">
+                                  <Image className="w-3 h-3" />
+                                  {artifact.split('/').pop()}
+                                </span>
+                                <a
+                                  href={`http://localhost:8000${artifact}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800"
+                                >
+                                  Open full size
+                                </a>
+                              </div>
+                            </div>
                           ) : (
-                            <Table className="w-3 h-3" />
+                            <div className="p-3 bg-gray-700">
+                              <a
+                                href={`http://localhost:8000${artifact}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 text-gray-300 hover:text-white"
+                              >
+                                <Table className="w-4 h-4" />
+                                <span>{artifact.split('/').pop()}</span>
+                              </a>
+                            </div>
                           )}
-                          {artifact.split('/').pop()}
-                        </a>
+                        </div>
                       ))}
                     </div>
                   )}
