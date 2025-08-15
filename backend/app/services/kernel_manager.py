@@ -329,7 +329,100 @@ class KernelManager:
         
         logger.info(f"Kernel {kernel_id} ready for session {session_id}")
         return kernel_id
+        async def execute_code(self, code: str, timeout: int = 30) -> Dict[str, Any]:
+        """
+        Execute code and return structured results
+        Compatible with LLM tool calling
+        """
+        if not self.kernel:
+            await self.ensure_kernel()
+        
+        # Send execute request
+        msg_id = self.kernel_client.execute(code)
+        
+        # Collect results
+        stdout_output = []
+        stderr_output = []
+        display_data = []
+        
+        # Poll for results with timeout
+        start_time = asyncio.get_event_loop().time()
+        
+        while True:
+            try:
+                # Check for timeout
+                if asyncio.get_event_loop().time() - start_time > timeout:
+                    await self.interrupt_kernel()
+                    return {
+                        "status": "timeout",
+                        "stdout": "\n".join(stdout_output),
+                        "stderr": "Execution timed out after {} seconds".format(timeout)
+                    }
+                
+                # Get message from kernel
+                msg = self.kernel_client.get_iopub_msg(timeout=0.1)
+                
+                if msg["parent_header"].get("msg_id") != msg_id:
+                    continue
+                
+                msg_type = msg["header"]["msg_type"]
+                content = msg["content"]
+                
+                if msg_type == "stream":
+                    if content["name"] == "stdout":
+                        stdout_output.append(content["text"])
+                    elif content["name"] == "stderr":
+                        stderr_output.append(content["text"])
+                
+                elif msg_type == "display_data":
+                    display_data.append(content["data"])
+                
+                elif msg_type == "error":
+                    return {
+                        "status": "error",
+                        "stdout": "\n".join(stdout_output),
+                        "stderr": "\n".join(content["traceback"])
+                    }
+                
+                elif msg_type == "execute_reply":
+                    if content["status"] == "ok":
+                        return {
+                            "status": "ok",
+                            "stdout": "\n".join(stdout_output),
+                            "stderr": "\n".join(stderr_output),
+                            "display_data": display_data
+                        }
+                    else:
+                        return {
+                            "status": "error",
+                            "stdout": "\n".join(stdout_output),
+                            "stderr": "\n".join(stderr_output)
+                        }
+            
+            except asyncio.TimeoutError:
+                await asyncio.sleep(0.01)
+                continue
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "stdout": "\n".join(stdout_output),
+                    "stderr": str(e)
+                }
     
+    async def ensure_kernel(self):
+        """Ensure kernel is running and ready"""
+        if not self.kernel:
+            await self.start_kernel()
+        
+        # Test kernel is responsive
+        test_result = await self.execute_code("print('ready')", timeout=5)
+        if test_result["status"] != "ok":
+            await self.restart_kernel()
+    
+    async def interrupt_kernel(self):
+        """Interrupt running execution"""
+        if self.kernel_manager:
+            self.kernel_manager.interrupt_kernel()
     async def execute_code(self, 
                           session_id: str, 
                           code: str,
