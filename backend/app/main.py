@@ -2,7 +2,7 @@
 Main FastAPI Application
 Central API server for AIDO-Lab
 """
-from app.routes import chat, upload
+from app.routes import chat, git, security, streaming, debug, rate_limit, artifacts
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -178,7 +178,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 app.include_router(chat.router)
-app.include_router(upload.router)
+app.include_router(git.router)
+app.include_router(security.router)
+app.include_router(streaming.router)
+app.include_router(debug.router)
+app.include_router(rate_limit.router)
+app.include_router(artifacts.router)
 
 # Configure CORS
 app.add_middleware(

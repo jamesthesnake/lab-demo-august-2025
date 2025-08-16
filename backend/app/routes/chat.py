@@ -85,7 +85,10 @@ async def chat(request: ChatRequest):
     """Chat endpoint with LLM orchestration"""
     
     # Import services from main
-    from app.main import kernel_manager, git_service, llm_service
+    from app.main import git_service, llm_service
+    
+    # Initialize secure kernel manager
+    kernel_manager = SecureKernelManager()
     
     if not llm_service:
         # Fallback: Execute code directly if it looks like Python
@@ -98,8 +101,13 @@ async def chat(request: ChatRequest):
             return ChatResponse(
                 assistant_message="Code executed successfully.",
                 code_executed=request.message,
-                tool_results=result.to_dict(),
-                artifacts=[]
+                tool_results={
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "execution_count": result.execution_count,
+                    "status": result.status
+                },
+                artifacts=result.artifacts
             )
         else:
             return ChatResponse(
@@ -175,12 +183,15 @@ async def chat(request: ChatRequest):
                     )
                     
                     code_executed = code
-                    tool_results = execution_result.to_dict()
+                    tool_results = {
+                        "stdout": execution_result.stdout,
+                        "stderr": execution_result.stderr,
+                        "execution_count": execution_result.execution_count,
+                        "status": execution_result.status
+                    }
                     
-                    # Check for generated files
-                    workspace_files = await kernel_manager.get_workspace_files(request.session_id)
-                    artifacts = [f"/workspace/{request.session_id}/{f['path']}" 
-                               for f in workspace_files if f['type'] in ['image', 'data']]
+                    # Use artifacts from execution result
+                    artifacts = execution_result.artifacts
                     
                     # Get final response from LLM
                     if llm_service.provider.value == "anthropic":

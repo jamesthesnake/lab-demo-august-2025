@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { ChatInterface } from '../components/ChatInterface'
-import { HistoryTree } from '../components/history-tree/HistoryTree'
+import StreamingChat from '../components/StreamingChat'
+import CodeEditor from '../components/CodeEditor'
+import OutputConsole from '../components/OutputConsole'
+import VersionTree from '../components/VersionTree'
+import SecurityPanel from '../components/SecurityPanel'
 
 // Use localhost since the browser runs on the host machine
 const API_URL = 'http://localhost:8000'
@@ -62,66 +65,102 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto p-8">
-        <h1 className="text-4xl font-bold mb-8">AIDO Lab</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
+        <div className="absolute top-40 left-40 w-60 h-60 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-4000"></div>
+      </div>
+      
+      <div className="relative z-10 max-w-7xl mx-auto p-8">
+        <div className="text-center mb-12">
+          <h1 className="text-6xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
+            AIDO Lab
+          </h1>
+          <p className="text-xl text-gray-300 font-light">
+            AI-Driven Data Science Platform with Secure Code Execution
+          </p>
+        </div>
         
-        <div className="grid grid-cols-4 gap-6 h-[calc(100vh-200px)]">
+        <div className="grid grid-cols-5 gap-6 h-[calc(100vh-280px)]">
           {/* Code Editor */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Code Editor</h2>
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6 hover:bg-white/15 transition-all duration-300">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              Code Editor
+            </h2>
             <textarea
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="w-full h-72 p-4 border rounded-lg font-mono text-sm resize-none"
-              placeholder="Enter Python code here..."
+              className="w-full h-72 p-4 bg-black/30 border border-white/20 rounded-xl font-mono text-sm resize-none text-green-300 placeholder-gray-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all"
+              placeholder="# Enter Python code here..."
             />
             <button
               onClick={executeCode}
               disabled={isExecuting}
-              className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              className="mt-4 px-6 py-3 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-xl hover:from-cyan-600 hover:to-purple-600 disabled:opacity-50 font-semibold shadow-lg hover:shadow-cyan-500/25 transition-all duration-300 transform hover:scale-105"
             >
-              {isExecuting ? 'Executing...' : 'Execute'}
+              {isExecuting ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Executing...
+                </span>
+              ) : (
+                'Execute Code'
+              )}
             </button>
             
             {session && (
-              <div className="mt-4 text-sm text-gray-600">
-                Session ID: {session.session_id}
+              <div className="mt-4 text-sm text-gray-300 bg-black/20 rounded-lg p-2 border border-white/10">
+                <span className="text-cyan-400">Session:</span> {session.session_id.slice(0, 8)}...
               </div>
             )}
           </div>
           
           {/* Output */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Output</h2>
-            <pre className="w-full h-72 p-4 border rounded-lg bg-gray-900 text-green-400 overflow-auto text-sm">
-              {output || 'Output will appear here...'}
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6 hover:bg-white/15 transition-all duration-300">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+              Output Console
+            </h2>
+            <pre className="w-full h-72 p-4 bg-black/40 border border-white/20 rounded-xl text-green-300 overflow-auto text-sm font-mono shadow-inner">
+              {output || '# Output will appear here...\n# Ready for execution'}
             </pre>
           </div>
 
           {/* AI Chat */}
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <h2 className="text-xl font-semibold p-6 pb-4 bg-gray-50 border-b">AI Assistant</h2>
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl overflow-hidden hover:bg-white/15 transition-all duration-300">
+            <h2 className="text-xl font-semibold p-6 pb-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-b border-white/20 text-white flex items-center gap-2">
+              <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+              AI Assistant
+            </h2>
             <div className="h-full">
               {session && (
-                <ChatInterface 
-                  sessionId={session.session_id} 
-                  onCodeInsert={handleCodeInsert}
+                <StreamingChat 
+                  sessionId={session.session_id}
                 />
               )}
             </div>
           </div>
 
           {/* Analysis History */}
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl overflow-hidden hover:bg-white/15 transition-all duration-300">
             <div className="h-full">
               {session && (
-                <HistoryTree 
+                <VersionTree 
                   sessionId={session.session_id}
                   onCommitSelect={(commitHash) => console.log('Selected commit:', commitHash)}
-                  onBranchCreate={(fromCommit, branchName) => console.log('Created branch:', branchName)}
+                  onBranchFork={(fromCommit, branchName) => console.log('Created branch:', branchName)}
                 />
               )}
+            </div>
+          </div>
+
+          {/* Security Panel */}
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl overflow-hidden hover:bg-white/15 transition-all duration-300">
+            <div className="h-full">
+              <SecurityPanel />
             </div>
           </div>
         </div>

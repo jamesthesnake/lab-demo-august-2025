@@ -1,0 +1,52 @@
+{
+  "name": "aido-network-policy",
+  "cniVersion": "0.4.0",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "aido-br0",
+      "isGateway": true,
+      "ipMasq": true,
+      "ipam": {
+        "type": "host-local",
+        "subnet": "172.20.0.0/16"
+      }
+    },
+    {
+      "type": "firewall",
+      "backend": "iptables",
+      "iptablesAdminChainName": "AIDO-ADMIN",
+      "rules": [
+        {
+          "comment": "Allow PyPI access",
+          "action": "ACCEPT",
+          "direction": "OUT",
+          "destination": "pypi.org"
+        },
+        {
+          "comment": "Allow PyPI CDN",
+          "action": "ACCEPT", 
+          "direction": "OUT",
+          "destination": "files.pythonhosted.org"
+        },
+        {
+          "comment": "Allow conda-forge",
+          "action": "ACCEPT",
+          "direction": "OUT", 
+          "destination": "conda.anaconda.org"
+        },
+        {
+          "comment": "Allow conda main",
+          "action": "ACCEPT",
+          "direction": "OUT",
+          "destination": "repo.anaconda.com"
+        },
+        {
+          "comment": "Block all other egress",
+          "action": "DROP",
+          "direction": "OUT"
+        }
+      ]
+    }
+  ]
+}

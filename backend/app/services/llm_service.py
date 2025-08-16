@@ -575,7 +575,32 @@ Provide 5 specific, actionable suggestions for continuing the analysis."""
                 await self._generate_anthropic(test_messages)
             
             return True
-            
         except Exception as e:
-            logger.error(f"API status check failed: {str(e)}")
+            logger.error(f"Failed to check API status: {e}")
             return False
+    
+    async def generate_response(self, message: str) -> str:
+        """Generate a simple text response from the LLM"""
+        try:
+            if self.provider == LLMProvider.ANTHROPIC:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": message}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature
+                )
+                return response.content[0].text if response.content else ""
+            
+            elif self.provider == LLMProvider.OPENAI:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": message}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature
+                )
+                return response.choices[0].message.content if response.choices else ""
+            
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to generate response: {e}")
+            return f"Error: {str(e)}"

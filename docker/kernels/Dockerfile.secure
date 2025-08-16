@@ -1,0 +1,39 @@
+# Secure Python execution container
+FROM python:3.11-slim
+
+# Create non-root user
+RUN groupadd -r sandbox && useradd -r -g sandbox -s /bin/false sandbox
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip install --no-cache-dir \
+    jupyter \
+    ipykernel \
+    pandas \
+    numpy \
+    matplotlib \
+    seaborn \
+    scikit-learn \
+    plotly \
+    requests \
+    && rm -rf /root/.cache/pip
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown sandbox:sandbox /workspace
+
+# Set up read-only filesystem structure
+RUN mkdir -p /tmp/workspace && chown sandbox:sandbox /tmp/workspace
+
+# Switch to non-root user
+USER sandbox
+
+# Set working directory
+WORKDIR /workspace
+
+# Start container process
+CMD ["python", "-c", "import time; time.sleep(3600)"]

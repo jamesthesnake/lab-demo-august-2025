@@ -97,6 +97,18 @@ class FileUploadRequest(BaseModel):
     path: Optional[str] = Field(None, description="Target path in workspace")
     description: Optional[str] = Field(None, description="File description")
 
+class ChatRequest(BaseModel):
+    """Request for chat/streaming conversation"""
+    message: str = Field(..., description="User message")
+    session_id: Optional[str] = Field(None, description="Session identifier")
+    context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+    
+    @validator('message')
+    def validate_message(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Message cannot be empty")
+        return v
+
 class SuggestionRequest(BaseModel):
     """Request for AI suggestions"""
     session_id: str = Field(..., description="Session identifier")

@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  aido-secure-kernel:
+    build:
+      context: .
+      dockerfile: Dockerfile.secure
+    image: aido-secure-kernel
+    container_name: aido-secure-kernel-${SESSION_ID:-default}
+    
+    # Security configurations
+    security_opt:
+      - seccomp:seccomp-profile.json
+      - apparmor:docker-default
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Network restrictions
+    networks:
+      - aido-restricted
+    
+    # Filesystem restrictions
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=50m
+      - /workspace:rw,size=100m
+    
+    # Drop all capabilities except essential ones
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    
+    # Process limits
+    ulimits:
+      nproc: 50
+      nofile: 1024
+    
+    # User and working directory
+    user: sandbox
+    working_dir: /workspace
+    
+    # Environment variables
+    environment:
+      - PYTHONPATH=/workspace
+      - HOME=/workspace
+      - USER=sandbox
+      - SHELL=/bin/false
+    
+    # Keep container running
+    command: ["python", "-c", "import time; time.sleep(3600)"]
+
+networks:
+  aido-restricted:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
