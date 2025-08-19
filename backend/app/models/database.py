@@ -40,7 +40,8 @@ class Conversation(Base):
     session = relationship("Session", back_populates="conversations")
 
 # Database setup
-DATABASE_URL = "sqlite:///./aido_lab.db"  # Can be changed to PostgreSQL
+import os
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://aido:aido@postgres:5432/aido_lab")
 engine = create_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

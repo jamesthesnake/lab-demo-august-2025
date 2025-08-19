@@ -63,6 +63,7 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
     }
 
     setMessages(prev => [...prev, userMessage])
+    const messageToSend = input
     setInput('')
     setIsStreaming(true)
     setCurrentResponse({
@@ -79,12 +80,17 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
 
     // Start SSE stream via POST request
     try {
-      const response = await fetch(`/api/stream/chat/${sessionId}`, {
+      // Use direct backend URL in development to bypass Next.js proxy issues
+      const apiUrl = process.env.NODE_ENV === 'development' 
+        ? `http://localhost:8000/api/stream/chat/${sessionId}`
+        : `/api/stream/chat/${sessionId}`
+        
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input })
+        body: JSON.stringify({ message: messageToSend })
       })
 
       if (!response.ok) {
@@ -108,59 +114,62 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
         buffer = lines.pop() || ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith('data: ') && line.trim() !== 'data: ') {
             try {
-              const data: StreamEvent = JSON.parse(line.slice(6))
-              
-              setCurrentResponse(prev => {
-                const updated = { ...prev }
+              const jsonStr = line.slice(6).trim()
+              if (jsonStr) {
+                const data: StreamEvent = JSON.parse(jsonStr)
                 
-                switch (data.type) {
-                  case 'text':
-                    updated.content += data.payload
-                    break
+                setCurrentResponse(prev => {
+                  const updated = { ...prev }
                   
-                  case 'code':
-                    updated.code = data.payload
-                    // Trigger code generation callback
-                    if (onCodeGenerated && data.payload) {
-                      onCodeGenerated(data.payload, false)
-                    }
-                    break
+                  switch (data.type) {
+                    case 'text':
+                      updated.content += data.payload
+                      break
+                    
+                    case 'code':
+                      updated.code = data.payload
+                      // Trigger code generation callback
+                      if (onCodeGenerated && data.payload) {
+                        onCodeGenerated(data.payload, false)
+                      }
+                      break
+                    
+                    case 'result':
+                      updated.result = data.payload
+                      break
+                    
+                    case 'artifact':
+                      updated.artifacts = [...(updated.artifacts || []), data.payload]
+                      break
+                    
+                    case 'commit':
+                      updated.commit = data.payload.sha
+                      updated.branch = data.payload.branch
+                      break
+                    
+                    case 'thinking':
+                    case 'executing':
+                      updated.status = data.payload
+                      break
+                    
+                    case 'complete':
+                      // Move current response to messages
+                      setMessages(prev => [...prev, updated])
+                      setCurrentResponse({})
+                      setIsStreaming(false)
+                      return updated
+                    
+                    case 'error':
+                      updated.error = data.payload
+                      setIsStreaming(false)
+                      return updated
+                  }
                   
-                  case 'result':
-                    updated.result = data.payload
-                    break
-                  
-                  case 'artifact':
-                    updated.artifacts = [...(updated.artifacts || []), data.payload]
-                    break
-                  
-                  case 'commit':
-                    updated.commit = data.payload.sha
-                    updated.branch = data.payload.branch
-                    break
-                  
-                  case 'thinking':
-                  case 'executing':
-                    updated.status = data.payload
-                    break
-                  
-                  case 'complete':
-                    // Move current response to messages
-                    setMessages(prev => [...prev, updated])
-                    setCurrentResponse({})
-                    setIsStreaming(false)
-                    return updated
-                  
-                  case 'error':
-                    updated.error = data.payload
-                    setIsStreaming(false)
-                    return updated
-                }
-                
-                return updated
-              })
+                  return updated
+                })
+              }
             } catch (error) {
               console.error('Failed to parse SSE data:', error)
             }

@@ -10,6 +10,18 @@ import time
 
 from app.services.git_session_manager import GitSessionManager
 from app.models.database import get_db, Session as DBSession
+from pydantic import BaseModel
+
+class CommitRequest(BaseModel):
+    message: str
+    code: str
+
+class BranchCreateRequest(BaseModel):
+    name: str
+    from_branch: Optional[str] = None
+
+class BranchSwitchRequest(BaseModel):
+    branch: str
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/git", tags=["git"])
@@ -43,31 +55,139 @@ async def get_session_info(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get session info for {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get session info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
+
+@router.post("/commit/{session_id}")
+async def manual_commit(session_id: str, request: CommitRequest):
+    """Manually commit code to git for a session"""
+    try:
+        from app.main import git_service
+        
+        # Prepare results for git service
+        results = {
+            "stdout": "Manual commit - no execution",
+            "stderr": "",
+            "execution_count": 0,
+            "status": "manual",
+            "artifacts": [],
+            "execution_time": 0.0
+        }
+        
+        metadata = {
+            "commit_message": request.message,
+            "manual_commit": True
+        }
+        
+        # Commit to git using the correct method signature
+        commit_info = await git_service.save_execution(session_id, request.code, results, metadata)
+        
+        return {
+            "status": "committed",
+            "session_id": session_id,
+            "sha": commit_info.sha,
+            "branch": commit_info.branch,
+            "message": request.message
+        }
+    except Exception as e:
+        logger.error(f"Failed to commit for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to commit: {str(e)}")
+
+@router.get("/sessions/{session_id}/branches")
+async def get_branches(session_id: str):
+    """Get all branches for a session"""
+    try:
+        from app.main import git_service
+        
+        # Initialize session if needed
+        if session_id not in git_service.repos:
+            await git_service.init_session_repo(session_id)
+        
+        repo = git_service.repos[session_id]
+        branches = []
+        current_branch = repo.active_branch.name
+        
+        for branch in repo.branches:
+            branches.append({
+                "name": branch.name,
+                "current": branch.name == current_branch,
+                "lastCommit": str(branch.commit.hexsha[:8]) if branch.commit else None
+            })
+        
+        return {
+            "branches": branches,
+            "current_branch": current_branch
+        }
+    except Exception as e:
+        logger.error(f"Failed to get branches for session {session_id}: {e}")
+        # Return default if git fails
+        return {
+            "branches": [{"name": "main", "current": True}],
+            "current_branch": "main"
+        }
 
 @router.post("/sessions/{session_id}/branches")
-async def create_branch(session_id: str, branch_name: str, from_commit: Optional[str] = None):
+async def create_branch(session_id: str, request: BranchCreateRequest):
     """Create a new branch"""
     try:
-        if from_commit:
-            branch = git_session_manager.fork_branch(session_id, from_commit, branch_name)
+        from app.main import git_service
+        
+        if session_id not in git_service.repos:
+            await git_service.init_session_repo(session_id)
+        
+        repo = git_service.repos[session_id]
+        
+        # Create new branch from current or specified branch
+        if request.from_branch:
+            source_branch = repo.branches[request.from_branch]
+            new_branch = repo.create_head(request.name, source_branch.commit)
         else:
-            branch = git_session_manager.create_execution_branch(session_id, branch_name)
+            new_branch = repo.create_head(request.name)
         
         return {
             "status": "created",
-            "branch_name": branch,
-            "from_commit": from_commit
+            "branch_name": request.name,
+            "from_branch": request.from_branch or repo.active_branch.name
         }
     except Exception as e:
-        logger.error(f"Failed to create branch {branch_name} for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Branch creation failed: {str(e)}")
+        logger.error(f"Failed to create branch for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}")
+
+@router.post("/sessions/{session_id}/switch")
+async def switch_branch(session_id: str, request: BranchSwitchRequest):
+    """Switch to a different branch"""
+    try:
+        from app.main import git_service
+        
+        if session_id not in git_service.repos:
+            await git_service.init_session_repo(session_id)
+        
+        repo = git_service.repos[session_id]
+        
+        # Switch to the specified branch
+        if request.branch in [b.name for b in repo.branches]:
+            repo.heads[request.branch].checkout()
+        else:
+            raise HTTPException(status_code=404, detail=f"Branch '{request.branch}' not found")
+        
+        return {
+            "status": "switched",
+            "branch": request.branch,
+            "commit": str(repo.active_branch.commit.hexsha[:8])
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to switch branch for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to switch branch: {str(e)}")
 
 @router.get("/sessions/{session_id}/history")
 async def get_commit_history(session_id: str, limit: int = 50):
     """Get commit history for session"""
     try:
-        history = git_session_manager.get_commit_history(session_id, limit=limit)
+        history = git_session_manager.get_commit_history(session_id)
+        # Apply limit manually if needed
+        if limit and len(history) > limit:
+            history = history[:limit]
         return {
             "session_id": session_id,
             "commits": history,
@@ -117,21 +237,6 @@ async def commit_execution(
         logger.error(f"Failed to commit execution for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Commit failed: {str(e)}")
 
-@router.get("/sessions/{session_id}/branches")
-async def list_branches(session_id: str):
-    """List all branches for session"""
-    try:
-        tree = git_session_manager.get_branch_tree(session_id)
-        branches = tree.get("branches", {})
-        
-        return {
-            "session_id": session_id,
-            "branches": list(branches.keys()),
-            "total": len(branches)
-        }
-    except Exception as e:
-        logger.error(f"Failed to list branches for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")
 
 @router.post("/sessions/{session_id}/checkout/{commit_sha}")
 async def checkout_commit(session_id: str, commit_sha: str, restore_state: bool = True):

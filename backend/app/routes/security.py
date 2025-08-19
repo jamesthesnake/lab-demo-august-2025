@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from typing import Dict, Any
 import logging
 
-from app.services.secure_kernel_manager import SecureKernelManager
+from app.services.simple_kernel_manager import SimpleKernelManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/security", tags=["security"])
@@ -16,16 +16,16 @@ router = APIRouter(prefix="/api/security", tags=["security"])
 # Global secure kernel manager instance
 secure_kernel_manager = None
 
-def get_secure_kernel_manager() -> SecureKernelManager:
+def get_secure_kernel_manager() -> SimpleKernelManager:
     """Dependency to get secure kernel manager"""
     global secure_kernel_manager
     if secure_kernel_manager is None:
-        secure_kernel_manager = SecureKernelManager()
+        secure_kernel_manager = SimpleKernelManager()
     return secure_kernel_manager
 
 @router.post("/panic")
 async def panic_button(
-    kernel_manager: SecureKernelManager = Depends(get_secure_kernel_manager)
+    kernel_manager: SimpleKernelManager = Depends(get_secure_kernel_manager)
 ):
     """
     Emergency panic button - kills all running containers immediately
@@ -49,7 +49,7 @@ async def panic_button(
 @router.delete("/containers/{container_id}")
 async def kill_container(
     container_id: str,
-    kernel_manager: SecureKernelManager = Depends(get_secure_kernel_manager)
+    kernel_manager: SimpleKernelManager = Depends(get_secure_kernel_manager)
 ):
     """
     Kill specific container by ID
@@ -78,7 +78,7 @@ async def kill_container(
 
 @router.get("/containers")
 async def list_active_containers(
-    kernel_manager: SecureKernelManager = Depends(get_secure_kernel_manager)
+    kernel_manager: SimpleKernelManager = Depends(get_secure_kernel_manager)
 ) -> Dict[str, Any]:
     """
     List all active containers and their status
@@ -99,7 +99,7 @@ async def list_active_containers(
 @router.delete("/sessions/{session_id}")
 async def cleanup_session(
     session_id: str,
-    kernel_manager: SecureKernelManager = Depends(get_secure_kernel_manager)
+    kernel_manager: SimpleKernelManager = Depends(get_secure_kernel_manager)
 ):
     """
     Clean up all resources for a specific session
@@ -122,7 +122,7 @@ async def cleanup_session(
 
 @router.get("/health")
 async def security_health_check(
-    kernel_manager: SecureKernelManager = Depends(get_secure_kernel_manager)
+    kernel_manager: SimpleKernelManager = Depends(get_secure_kernel_manager)
 ):
     """
     Check security system health

@@ -21,9 +21,9 @@ import base64
 from io import BytesIO
 
 # Import services
-from app.services.kernel_manager import KernelManager, ExecutionResult, AnalysisContext
+from app.services.simple_kernel_manager import SimpleKernelManager, ExecutionResult
 from app.services.git_service import GitService
-from app.services.llm_service import LLMService, LLMProvider
+from app.services.llm_service import LLMService, LLMProvider, AnalysisContext
 
 # Import models
 from app.models.schemas import (
@@ -34,22 +34,8 @@ from app.models.schemas import (
     BranchRequest,
     CheckoutRequest,
     FileListResponse,
-    SuggestionResponse,
-    WebSocketMessage,
-    CommitInfoResponse,
-    SuggestionRequest,  # Add this
-    ExecutionResultData
-)
-from app.models.schemas import (
-    ExecuteRequest,
-    ExecuteResponse,
-    SessionInfo,
-    HistoryResponse,
-    BranchRequest,
-    CheckoutRequest,
-    FileListResponse,
     FileInfo,
-    SuggestionRequest,  # Add this
+    SuggestionRequest,
     SuggestionResponse,
     WebSocketMessage,
     CommitInfoResponse,
@@ -77,7 +63,7 @@ except ImportError:
     logger.warning("python-dotenv not installed, using system environment variables")
 
 # Global services
-kernel_manager: Optional[KernelManager] = None
+kernel_manager: Optional[SimpleKernelManager] = None
 git_service: Optional[GitService] = None
 llm_service: Optional[LLMService] = None
 session_manager: Optional[SessionManager] = None
@@ -103,13 +89,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Using workspace directory: {workspace_base}")
     
     # Initialize services
-    kernel_manager = KernelManager(
-        docker_image=os.getenv("KERNEL_IMAGE", "aido-kernel:latest"),
-        workspace_base=workspace_base,
-        max_kernels=int(os.getenv("MAX_KERNELS", "10")),
-        kernel_timeout=int(os.getenv("KERNEL_TIMEOUT", "3600")),
-        execution_timeout=int(os.getenv("EXECUTION_TIMEOUT", "30"))
-    )
+    kernel_manager = SimpleKernelManager()
     
     git_service = GitService(workspace_base=workspace_base)
     
@@ -122,7 +102,7 @@ async def lifespan(app: FastAPI):
             llm_service = LLMService(
                 provider=LLMProvider.ANTHROPIC,
                 api_key=anthropic_key,
-                model="claude-3-5-sonnet-20241022",
+                model="claude-opus-4-1-20250805",
                 temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
                 max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2000"))
             )
@@ -404,9 +384,10 @@ async def execute_code(request: ExecuteRequest) -> ExecuteResponse:
     })
     
     # Create response
+    result_dict = execution_result.to_dict()
     results_data = ExecutionResultData(
-        stdout=execution_result.to_dict()["stdout"],
-        stderr=execution_result.to_dict()["stderr"],
+        stdout=result_dict["stdout"],
+        stderr=result_dict["stderr"],
         display_data=execution_result.display_data,
         errors=execution_result.errors,
         execution_count=execution_result.execution_count,
@@ -706,12 +687,14 @@ async def _build_analysis_context(session_id: str) -> AnalysisContext:
     # Get files
     try:
         files = await file_manager.list_files(session_id)
-        file_paths = [f["path"] for f in files]
-    except:
+        file_paths = [f.path if hasattr(f, 'path') else f.get("path", "") for f in files if f]
+    except Exception as e:
+        logger.warning(f"Failed to list files for context: {e}")
         file_paths = []
     
     # Get previous code
-    previous_code = [exec.get("code", "") for exec in session.get("executions", [])[-5:]]
+    executions = session.get("executions", [])
+    previous_code = [exec.get("code", "") for exec in executions[-5:] if exec and isinstance(exec, dict)]
     
     return AnalysisContext(
         session_id=session_id,

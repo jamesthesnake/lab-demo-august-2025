@@ -87,8 +87,8 @@ async def chat(request: ChatRequest):
     # Import services from main
     from app.main import git_service, llm_service
     
-    # Initialize secure kernel manager
-    kernel_manager = SecureKernelManager()
+    # Import kernel manager from main
+    from app.main import kernel_manager
     
     if not llm_service:
         # Fallback: Execute code directly if it looks like Python

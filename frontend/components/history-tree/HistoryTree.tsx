@@ -40,11 +40,22 @@ export const HistoryTree: React.FC<HistoryTreeProps> = ({
 
   useEffect(() => {
     loadHistory();
+    
+    // Listen for git history updates
+    const handleGitUpdate = () => {
+      loadHistory();
+    };
+    
+    window.addEventListener('gitHistoryUpdate', handleGitUpdate);
+    return () => window.removeEventListener('gitHistoryUpdate', handleGitUpdate);
   }, [sessionId]);
 
   const loadHistory = async () => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+    
     try {
-      const response = await fetch(`/api/chat/history/${sessionId}`);
+      const response = await fetch(`http://localhost:8000/api/git/sessions/${sessionId}/history`);
       const data = await response.json();
       setHistory(data);
     } catch (error) {

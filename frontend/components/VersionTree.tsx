@@ -35,6 +35,33 @@ export default function VersionTree({ sessionId, onCommitSelect, onBranchFork }:
     if (sessionId) {
       fetchHistory()
       
+      // Listen for git history updates from manual commits
+      const handleGitUpdate = () => {
+        fetchHistory()
+      }
+      
+      window.addEventListener('gitHistoryUpdate', handleGitUpdate)
+      return () => window.removeEventListener('gitHistoryUpdate', handleGitUpdate)
+    }
+  }, [sessionId])
+
+  const fetchHistory = async () => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/git/sessions/${sessionId}/history`)
+      if (response.ok) {
+        const data = await response.json()
+        setCommits(data.commits || [])
+        setBranches(data.branches || {})
+      }
+    } catch (error) {
+      console.error('Failed to fetch history:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (sessionId) {
+      fetchHistory()
+      
       // Set up SSE for real-time updates
       const eventSource = new EventSource(`/api/stream/history/${sessionId}`)
       
@@ -62,15 +89,6 @@ export default function VersionTree({ sessionId, onCommitSelect, onBranchFork }:
     }
   }, [sessionId])
 
-  const fetchHistory = async () => {
-    try {
-      const response = await fetch(`/api/git/history/${sessionId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setCommits(data.commits || [])
-        setBranches(data.branches || {})
-      }
-    } catch (error) {
       console.error('Failed to fetch history:', error)
     }
   }

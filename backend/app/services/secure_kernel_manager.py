@@ -3,7 +3,6 @@ Secure Container-based Kernel Manager
 Implements secure code execution with Docker containers
 """
 
-import docker
 import asyncio
 import json
 import uuid
@@ -11,6 +10,8 @@ import time
 import logging
 import tempfile
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 from dataclasses import dataclass
@@ -30,21 +31,14 @@ class SecureExecutionResult:
     container_id: Optional[str] = None
 
 class SecureKernelManager:
-    """Manages secure Docker-based code execution"""
+    """Manages secure subprocess-based code execution"""
     
     def __init__(self):
-        try:
-            self.docker_client = docker.from_env()
-            self.docker_available = True
-        except Exception as e:
-            logger.warning(f"Docker not available: {e}")
-            self.docker_client = None
-            self.docker_available = False
-        
-        self.active_containers = {}
-        self.session_containers = {}
+        self.docker_available = False  # Always use subprocess
+        self.active_processes = {}
+        self.session_processes = {}
         self.execution_queue = asyncio.Queue()
-        self.container_logs = {}
+        self.process_logs = {}
         self.session_states = {}  # Store session execution states
         
         # Security settings

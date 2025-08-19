@@ -3,25 +3,51 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import StreamingChat from '../components/StreamingChat'
+import BranchManager from '../components/BranchManager'
 import CodeEditor from '../components/CodeEditor'
 import OutputConsole from '../components/OutputConsole'
-import VersionTree from '../components/VersionTree'
+import SimpleVersionTree from '../components/SimpleVersionTree'
 import SecurityPanel from '../components/SecurityPanel'
+import ClientOnly from '../components/ClientOnly'
 
 // Use localhost since the browser runs on the host machine
 const API_URL = 'http://localhost:8000'
 
 export default function Home() {
   const [session, setSession] = useState<any>(null)
-  const [code, setCode] = useState('print("Hello, whats up AIDO Lab!")')
+  const [code, setCode] = useState(`print("Hello, whats up AIDO Lab!")
+
+# Example: Create a simple data visualization
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Sample data
+data = {'x': [1, 2, 3, 4, 5], 'y': [2, 5, 3, 8, 7]}
+df = pd.DataFrame(data)
+
+# Create plot
+plt.figure(figsize=(8, 6))
+plt.plot(df['x'], df['y'], marker='o')
+plt.title('Sample Data Visualization')
+plt.xlabel('X values')
+plt.ylabel('Y values')
+plt.grid(True)
+plt.show()
+`)
   const [output, setOutput] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
+  const [isCommitting, setIsCommitting] = useState(false)
+  const [currentBranch, setCurrentBranch] = useState('main')
+  const [branchCodeCache, setBranchCodeCache] = useState<Record<string, string>>({})
 
   useEffect(() => {
     createSession()
   }, [])
 
   const createSession = async () => {
+    // Only run on client side
+    if (typeof window === 'undefined') return
+    
     try {
       const response = await axios.post(`${API_URL}/api/sessions/create`)
       setSession(response.data)
@@ -70,6 +96,73 @@ export default function Home() {
     }
   }
 
+  const handleCommitCode = async () => {
+    if (!session || !code.trim()) return
+    
+    setIsCommitting(true)
+    try {
+      const response = await axios.post(`${API_URL}/api/git/commit/${session.session_id}`, {
+        message: `Manual commit: ${new Date().toISOString()}`,
+        code: code
+      })
+      setOutput(prev => prev + '\n\n✅ Code committed to git: ' + response.data.sha)
+      
+      // Trigger git history refresh by dispatching a custom event
+      window.dispatchEvent(new CustomEvent('gitHistoryUpdate', { 
+        detail: { sessionId: session.session_id, commitSha: response.data.sha } 
+      }))
+    } catch (error: any) {
+      console.error('Commit failed:', error)
+      setOutput(prev => prev + '\n\n❌ Commit failed: ' + error.message)
+    } finally {
+      setIsCommitting(false)
+    }
+  }
+
+  const handleBranchSwitch = async (branchName: string) => {
+    // Save current code to cache before switching
+    setBranchCodeCache(prev => ({
+      ...prev,
+      [currentBranch]: code
+    }))
+    
+    // Load code for the new branch
+    const cachedCode = branchCodeCache[branchName]
+    if (cachedCode) {
+      setCode(cachedCode)
+    } else {
+      // Load code from git for this branch
+      try {
+        const response = await fetch(`${API_URL}/api/git/sessions/${session?.session_id}/branches/${branchName}/code`)
+        if (response.ok) {
+          const data = await response.json()
+          setCode(data.code || '')
+        } else {
+          // Default code for new branch
+          setCode('# New branch - start coding here!\nprint("Hello from ' + branchName + '")')
+        }
+      } catch (error) {
+        console.error('Failed to load branch code:', error)
+        setCode('# New branch - start coding here!\nprint("Hello from ' + branchName + '")')
+      }
+    }
+    
+    setCurrentBranch(branchName)
+    setOutput(prev => prev + '\n\n🌿 Switched to branch: ' + branchName)
+  }
+
+  const handleBranchCreate = (branchName: string, fromBranch: string) => {
+    // Cache current code when creating a new branch
+    setBranchCodeCache(prev => ({
+      ...prev,
+      [fromBranch]: code,
+      [branchName]: code // New branch starts with current code
+    }))
+    
+    setCurrentBranch(branchName)
+    setOutput(prev => prev + '\n\n🌿 Created and switched to branch: ' + branchName)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
       {/* Animated background elements */}
@@ -96,15 +189,26 @@ export default function Home() {
             {/* Code Editor */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
               <div className="bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border-b border-white/10 p-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
-                  <div className="w-3 h-3 bg-emerald-400 rounded-full animate-pulse"></div>
-                  Code Editor
-                  {session && (
-                    <span className="ml-auto text-xs bg-black/30 px-3 py-1 rounded-full text-cyan-300">
-                      Session: {session.session_id.slice(0, 8)}...
-                    </span>
-                  )}
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-3">
+                    <div className="w-3 h-3 bg-emerald-400 rounded-full animate-pulse"></div>
+                    Code Editor
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {session && (
+                      <BranchManager 
+                        sessionId={session.session_id}
+                        onBranchSwitch={handleBranchSwitch}
+                        onBranchCreate={handleBranchCreate}
+                      />
+                    )}
+                    {session && (
+                      <span className="text-xs bg-black/30 px-3 py-1 rounded-full text-cyan-300">
+                        Session: {session.session_id.slice(0, 8)}...
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="p-6">
                 <textarea
@@ -136,6 +240,20 @@ import matplotlib.pyplot as plt
                         </svg>
                         Execute Code
                       </span>
+                    )}
+                  </button>
+                  <button 
+                    onClick={handleCommitCode}
+                    disabled={!code.trim() || isCommitting}
+                    className="px-4 py-3 bg-green-600/80 border border-green-500/50 text-white rounded-xl hover:bg-green-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Commit to Git"
+                  >
+                    {isCommitting ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
                     )}
                   </button>
                   <button className="px-4 py-3 bg-white/10 border border-white/20 text-white rounded-xl hover:bg-white/20 transition-all duration-300">
@@ -195,19 +313,28 @@ import matplotlib.pyplot as plt
                 </h2>
               </div>
               <div className="h-96">
-                {session ? (
-                  <StreamingChat 
-                    sessionId={session.session_id}
-                    onCodeGenerated={handleCodeInsert}
-                  />
-                ) : (
+                <ClientOnly fallback={
                   <div className="flex items-center justify-center h-full text-gray-400">
                     <div className="text-center">
                       <div className="w-12 h-12 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
-                      <p>Initializing session...</p>
+                      <p>Loading AI Assistant...</p>
                     </div>
                   </div>
-                )}
+                }>
+                  {session ? (
+                    <StreamingChat 
+                      sessionId={session.session_id}
+                      onCodeGenerated={handleCodeInsert}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <div className="text-center">
+                        <div className="w-12 h-12 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+                        <p>Initializing session...</p>
+                      </div>
+                    </div>
+                  )}
+                </ClientOnly>
               </div>
             </div>
 
@@ -223,23 +350,32 @@ import matplotlib.pyplot as plt
                 </h2>
               </div>
               <div className="h-96">
-                {session ? (
-                  <VersionTree 
-                    sessionId={session.session_id}
-                    onCommitSelect={(commitHash) => console.log('Selected commit:', commitHash)}
-                    onBranchFork={(fromCommit, branchName) => console.log('Created branch:', branchName)}
-                  />
-                ) : (
+                <ClientOnly fallback={
                   <div className="flex items-center justify-center h-full text-gray-400">
                     <div className="text-center">
                       <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      <p>No commits yet</p>
-                      <p className="text-sm mt-1">Run code to create history</p>
+                      <p>Loading History...</p>
                     </div>
                   </div>
-                )}
+                }>
+                  {session ? (
+                    <SimpleVersionTree 
+                      sessionId={session.session_id}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <div className="text-center">
+                        <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p>No commits yet</p>
+                        <p className="text-sm mt-1">Run code to create history</p>
+                      </div>
+                    </div>
+                  )}
+                </ClientOnly>
               </div>
             </div>
 
@@ -255,7 +391,16 @@ import matplotlib.pyplot as plt
                 </h2>
               </div>
               <div className="h-96">
-                <SecurityPanel />
+                <ClientOnly fallback={
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <div className="w-12 h-12 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin mx-auto mb-4"></div>
+                      <p>Loading Security Panel...</p>
+                    </div>
+                  </div>
+                }>
+                  <SecurityPanel />
+                </ClientOnly>
               </div>
             </div>
           </div>

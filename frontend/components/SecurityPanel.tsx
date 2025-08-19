@@ -32,22 +32,47 @@ export default function SecurityPanel() {
   const [loading, setLoading] = useState(false)
 
   const fetchSecurityStatus = async () => {
+    // Only run on client side
+    if (typeof window === 'undefined') return
+    
     try {
       const response = await fetch('/api/security/health')
-      const data = await response.json()
-      setSecurityStatus(data)
+      if (response.ok) {
+        const data = await response.json()
+        setSecurityStatus(data)
+      }
     } catch (error) {
       console.error('Failed to fetch security status:', error)
+      // Set default status on error
+      setSecurityStatus({
+        status: 'unknown',
+        active_containers: 0,
+        docker_available: false,
+        security_features: {
+          seccomp: false,
+          apparmor: false,
+          read_only_rootfs: false,
+          network_isolation: false,
+          resource_limits: false,
+          timeout_enforcement: false
+        }
+      })
     }
   }
 
   const fetchContainers = async () => {
+    // Only run on client side
+    if (typeof window === 'undefined') return
+    
     try {
       const response = await fetch('/api/security/containers')
-      const data = await response.json()
-      setContainers(data.active_containers || {})
+      if (response.ok) {
+        const data = await response.json()
+        setContainers(data.active_containers || {})
+      }
     } catch (error) {
       console.error('Failed to fetch containers:', error)
+      setContainers({})
     }
   }
 
@@ -96,16 +121,19 @@ export default function SecurityPanel() {
   }
 
   useEffect(() => {
-    fetchSecurityStatus()
-    fetchContainers()
-    
-    // Refresh every 5 seconds
-    const interval = setInterval(() => {
+    // Only fetch on client-side
+    if (typeof window !== 'undefined') {
       fetchSecurityStatus()
       fetchContainers()
-    }, 5000)
+      
+      // Refresh every 5 seconds
+      const interval = setInterval(() => {
+        fetchSecurityStatus()
+        fetchContainers()
+      }, 5000)
 
-    return () => clearInterval(interval)
+      return () => clearInterval(interval)
+    }
   }, [])
 
   const getStatusColor = (status: string) => {

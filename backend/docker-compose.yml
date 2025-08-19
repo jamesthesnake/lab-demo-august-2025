@@ -51,7 +51,6 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - WORKSPACE_BASE=/app/workspaces
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./workspaces:/app/workspaces
       - .:/app
     ports:
