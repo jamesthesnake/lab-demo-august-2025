@@ -42,14 +42,18 @@ class SecureKernelManager:
             self.docker_available = False
         
         self.active_containers = {}
+        self.session_containers = {}
         self.execution_queue = asyncio.Queue()
         self.container_logs = {}
+        self.session_states = {}  # Store session execution states
         
         # Security settings
         self.max_memory = "512m"
         self.max_cpus = "0.5"
         self.execution_timeout = 30
         self.max_processes = 50
+        self.max_disk_size = "100m"
+        self.max_execution_time = 30
         
         # Build secure image if not exists
         self._ensure_secure_image()
@@ -428,3 +432,149 @@ except Exception as e:
                 info[container_id] = {"status": "error", "error": str(e)}
         
         return info
+    
+    async def save_session_state(self, session_id: str, commit_sha: str) -> bool:
+        """Save current session state for later restoration"""
+        try:
+            if session_id not in self.session_containers:
+                return False
+            
+            container_id = self.session_containers[session_id]
+            container = self.active_containers.get(container_id)
+            
+            if not container:
+                return False
+            
+            # Extract Python globals and locals state
+            state_extraction_code = """
+import pickle
+import json
+import sys
+import os
+
+# Get current globals (excluding built-ins and modules)
+current_globals = {}
+for name, value in globals().items():
+    if not name.startswith('_') and not callable(value) and not hasattr(value, '__module__'):
+        try:
+            # Try to serialize the value
+            pickle.dumps(value)
+            current_globals[name] = value
+        except:
+            # If not serializable, store type info
+            current_globals[name] = f"<{type(value).__name__}>"
+
+# Save to state file
+state_data = {
+    'globals': current_globals,
+    'working_directory': os.getcwd(),
+    'python_path': sys.path.copy()
+}
+
+with open('/workspace/.session_state.pkl', 'wb') as f:
+    pickle.dump(state_data, f)
+
+print("STATE_SAVED_SUCCESS")
+"""
+            
+            # Execute state extraction
+            result = container.exec_run(
+                cmd=["python", "-c", state_extraction_code],
+                user="sandbox",
+                workdir="/workspace"
+            )
+            
+            if "STATE_SAVED_SUCCESS" in result.output.decode('utf-8'):
+                # Store state metadata
+                self.session_states[session_id] = {
+                    'commit_sha': commit_sha,
+                    'container_id': container_id,
+                    'saved_at': time.time()
+                }
+                logger.info(f"Saved session state for {session_id} at commit {commit_sha[:8]}")
+                return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save session state for {session_id}: {e}")
+        
+        return False
+    
+    async def restore_session_state(self, session_id: str, commit_sha: str) -> bool:
+        """Restore session state from a previous commit"""
+        try:
+            # Ensure we have a container for this session
+            container_id = await self.get_or_create_container(session_id)
+            container = self.active_containers[container_id]
+            
+            # Check if state file exists in workspace
+            check_result = container.exec_run(
+                cmd=["test", "-f", "/workspace/.session_state.pkl"],
+                user="sandbox"
+            )
+            
+            if check_result.exit_code != 0:
+                logger.warning(f"No saved state found for session {session_id}")
+                return False
+            
+            # Restore state
+            state_restoration_code = """
+import pickle
+import os
+import sys
+
+try:
+    # Load saved state
+    with open('/workspace/.session_state.pkl', 'rb') as f:
+        state_data = pickle.load(f)
+    
+    # Restore globals
+    for name, value in state_data.get('globals', {}).items():
+        if not isinstance(value, str) or not value.startswith('<'):
+            globals()[name] = value
+    
+    # Restore working directory
+    if 'working_directory' in state_data:
+        os.chdir(state_data['working_directory'])
+    
+    # Restore Python path
+    if 'python_path' in state_data:
+        sys.path = state_data['python_path']
+    
+    print("STATE_RESTORED_SUCCESS")
+    
+except Exception as e:
+    print(f"STATE_RESTORE_ERROR: {e}")
+"""
+            
+            result = container.exec_run(
+                cmd=["python", "-c", state_restoration_code],
+                user="sandbox",
+                workdir="/workspace"
+            )
+            
+            output = result.output.decode('utf-8')
+            if "STATE_RESTORED_SUCCESS" in output:
+                logger.info(f"Restored session state for {session_id} from commit {commit_sha[:8]}")
+                return True
+            else:
+                logger.error(f"State restoration failed: {output}")
+                
+        except Exception as e:
+            logger.error(f"Failed to restore session state for {session_id}: {e}")
+        
+        return False
+    
+    async def checkpoint_session(self, session_id: str) -> str:
+        """Create a checkpoint of current session state"""
+        try:
+            # Save current state
+            checkpoint_id = f"checkpoint_{int(time.time())}"
+            success = await self.save_session_state(session_id, checkpoint_id)
+            
+            if success:
+                return checkpoint_id
+            
+        except Exception as e:
+            logger.error(f"Failed to create checkpoint for {session_id}: {e}")
+        
+        return None

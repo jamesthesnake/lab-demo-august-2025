@@ -6,6 +6,7 @@ Handles version control operations for sessions
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, List, Any, Optional
 import logging
+import time
 
 from app.services.git_session_manager import GitSessionManager
 from app.models.database import get_db, Session as DBSession
@@ -131,6 +132,158 @@ async def list_branches(session_id: str):
     except Exception as e:
         logger.error(f"Failed to list branches for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")
+
+@router.post("/sessions/{session_id}/checkout/{commit_sha}")
+async def checkout_commit(session_id: str, commit_sha: str, restore_state: bool = True):
+    """Checkout a specific commit and optionally restore execution state"""
+    try:
+        from app.main import git_service, kernel_manager
+        
+        if not git_service:
+            raise HTTPException(status_code=503, detail="Git service not available")
+        
+        # Checkout the commit in git
+        commit_info = await git_service.checkout_commit(session_id, commit_sha)
+        
+        # Restore execution state if requested
+        state_restored = False
+        if restore_state and kernel_manager:
+            state_restored = await kernel_manager.restore_session_state(session_id, commit_sha)
+        
+        return {
+            "status": "checked_out",
+            "commit": commit_info,
+            "state_restored": state_restored,
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"Failed to checkout commit {commit_sha} for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
+
+@router.post("/sessions/{session_id}/restore/{commit_sha}")
+async def restore_to_commit(session_id: str, commit_sha: str, create_branch: bool = False, branch_name: str = None):
+    """Restore session to a previous commit state"""
+    try:
+        from app.main import git_service, kernel_manager
+        
+        if not git_service:
+            raise HTTPException(status_code=503, detail="Git service not available")
+        
+        # Create new branch if requested
+        if create_branch:
+            if not branch_name:
+                branch_name = f"restore-{commit_sha[:8]}-{int(time.time())}"
+            
+            branch_info = await git_service.create_branch(session_id, branch_name, commit_sha)
+            await git_service.switch_branch(session_id, branch_name)
+        else:
+            # Just checkout the commit
+            await git_service.checkout_commit(session_id, commit_sha)
+        
+        # Restore execution state
+        state_restored = False
+        if kernel_manager:
+            state_restored = await kernel_manager.restore_session_state(session_id, commit_sha)
+        
+        return {
+            "status": "restored",
+            "commit_sha": commit_sha,
+            "branch_created": create_branch,
+            "branch_name": branch_name if create_branch else None,
+            "state_restored": state_restored
+        }
+    except Exception as e:
+        logger.error(f"Failed to restore to commit {commit_sha} for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
+
+@router.get("/sessions/{session_id}/diff/{commit_sha1}/{commit_sha2}")
+async def get_commit_diff(session_id: str, commit_sha1: str, commit_sha2: str):
+    """Get diff between two commits"""
+    try:
+        from app.main import git_service
+        
+        if not git_service:
+            raise HTTPException(status_code=503, detail="Git service not available")
+        
+        diff_info = await git_service.get_diff(session_id, commit_sha1, commit_sha2)
+        
+        return {
+            "session_id": session_id,
+            "commit_sha1": commit_sha1,
+            "commit_sha2": commit_sha2,
+            "diff": diff_info
+        }
+    except Exception as e:
+        logger.error(f"Failed to get diff for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Diff failed: {str(e)}")
+
+@router.post("/sessions/{session_id}/merge")
+async def merge_branches(session_id: str, source_branch: str, target_branch: str = "main"):
+    """Merge one branch into another"""
+    try:
+        from app.main import git_service
+        
+        if not git_service:
+            raise HTTPException(status_code=503, detail="Git service not available")
+        
+        merge_result = await git_service.merge_branches(session_id, source_branch, target_branch)
+        
+        return {
+            "session_id": session_id,
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+            "result": merge_result
+        }
+    except Exception as e:
+        logger.error(f"Failed to merge branches for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
+
+@router.post("/sessions/{session_id}/checkpoint")
+async def create_checkpoint(session_id: str):
+    """Create a checkpoint of current session state"""
+    try:
+        from app.main import kernel_manager
+        
+        if not kernel_manager:
+            raise HTTPException(status_code=503, detail="Kernel manager not available")
+        
+        checkpoint_id = await kernel_manager.checkpoint_session(session_id)
+        
+        if checkpoint_id:
+            return {
+                "status": "checkpoint_created",
+                "checkpoint_id": checkpoint_id,
+                "session_id": session_id
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create checkpoint")
+            
+    except Exception as e:
+        logger.error(f"Failed to create checkpoint for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Checkpoint failed: {str(e)}")
+
+@router.get("/sessions/{session_id}/file/{commit_sha}/{file_path:path}")
+async def get_file_content(session_id: str, commit_sha: str, file_path: str):
+    """Get file content from a specific commit"""
+    try:
+        from app.main import git_service
+        
+        if not git_service:
+            raise HTTPException(status_code=503, detail="Git service not available")
+        
+        content = await git_service.get_file_content(session_id, file_path, commit_sha)
+        
+        return {
+            "session_id": session_id,
+            "commit_sha": commit_sha,
+            "file_path": file_path,
+            "content": content
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        logger.error(f"Failed to get file content for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get file content: {str(e)}")
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):

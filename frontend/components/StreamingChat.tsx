@@ -10,9 +10,10 @@ interface StreamEvent {
 
 interface StreamingChatProps {
   sessionId: string
+  onCodeGenerated?: (code: string, autoExecute?: boolean) => void
 }
 
-export default function StreamingChat({ sessionId }: StreamingChatProps) {
+export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingChatProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -22,6 +23,29 @@ export default function StreamingChat({ sessionId }: StreamingChatProps) {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  // Extract code blocks from markdown text
+  const extractCodeFromText = (text: string): string | null => {
+    // Look for Python code blocks
+    const pythonCodeMatch = text.match(/```(?:python|py)?\n([\s\S]*?)\n```/i)
+    if (pythonCodeMatch) {
+      return pythonCodeMatch[1].trim()
+    }
+    
+    // Look for any code blocks
+    const codeMatch = text.match(/```\n?([\s\S]*?)\n?```/)
+    if (codeMatch) {
+      return codeMatch[1].trim()
+    }
+    
+    // Look for inline code that looks like Python
+    const inlineMatch = text.match(/`([^`]*(?:import|def|print|pandas|numpy|plt)[^`]*)`/)
+    if (inlineMatch) {
+      return inlineMatch[1].trim()
+    }
+    
+    return null
   }
 
   useEffect(() => {
@@ -98,6 +122,10 @@ export default function StreamingChat({ sessionId }: StreamingChatProps) {
                   
                   case 'code':
                     updated.code = data.payload
+                    // Trigger code generation callback
+                    if (onCodeGenerated && data.payload) {
+                      onCodeGenerated(data.payload, false)
+                    }
                     break
                   
                   case 'result':
@@ -167,15 +195,68 @@ export default function StreamingChat({ sessionId }: StreamingChatProps) {
                   <p key={i} className="mb-2">{line}</p>
                 ))}
               </div>
+              
+              {/* Smart Code Detection */}
+              {!message.code && extractCodeFromText(message.content) && (
+                <div className="mt-3 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Code className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm text-cyan-400 font-medium">Code detected in response</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onCodeGenerated?.(extractCodeFromText(message.content)!, false)}
+                        className="px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-300 rounded text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                        title="Extract and insert code"
+                      >
+                        <Code className="w-3 h-3" />
+                        Extract
+                      </button>
+                      <button
+                        onClick={() => onCodeGenerated?.(extractCodeFromText(message.content)!, true)}
+                        className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 rounded text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                        title="Extract and run code"
+                      >
+                        <Play className="w-3 h-3" />
+                        Run
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="text-xs text-cyan-300 bg-black/20 rounded p-2 overflow-x-auto">
+                    <code>{extractCodeFromText(message.content)}</code>
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 
           {/* Code Block */}
           {message.code && (
             <div className="mb-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Code className="w-4 h-4 text-cyan-400" />
-                <span className="text-sm text-cyan-400 font-semibold">Generated Code</span>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Code className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm text-cyan-400 font-semibold">Generated Code</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onCodeGenerated?.(message.code, false)}
+                    className="px-3 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-300 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                    title="Insert code into editor"
+                  >
+                    <Code className="w-3 h-3" />
+                    Insert
+                  </button>
+                  <button
+                    onClick={() => onCodeGenerated?.(message.code, true)}
+                    className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                    title="Insert and execute code"
+                  >
+                    <Play className="w-3 h-3" />
+                    Run
+                  </button>
+                </div>
               </div>
               <pre className="bg-black/40 border border-white/20 rounded-xl p-3 text-green-300 text-sm overflow-x-auto">
                 <code>{message.code}</code>
@@ -288,9 +369,29 @@ export default function StreamingChat({ sessionId }: StreamingChatProps) {
               {/* Code being generated */}
               {currentResponse.code && (
                 <div className="mb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Code className="w-4 h-4 text-cyan-400" />
-                    <span className="text-sm text-cyan-400 font-semibold">Generated Code</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Code className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm text-cyan-400 font-semibold">Generated Code</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onCodeGenerated?.(currentResponse.code, false)}
+                        className="px-3 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-300 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                        title="Insert code into editor"
+                      >
+                        <Code className="w-3 h-3" />
+                        Insert
+                      </button>
+                      <button
+                        onClick={() => onCodeGenerated?.(currentResponse.code, true)}
+                        className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1"
+                        title="Insert and execute code"
+                      >
+                        <Play className="w-3 h-3" />
+                        Run
+                      </button>
+                    </div>
                   </div>
                   <pre className="bg-black/40 border border-white/20 rounded-xl p-3 text-green-300 text-sm overflow-x-auto">
                     <code>{currentResponse.code}</code>
