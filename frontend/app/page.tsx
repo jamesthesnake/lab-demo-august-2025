@@ -10,13 +10,24 @@ import SimpleVersionTree from '../components/SimpleVersionTree'
 import ArtifactViewer from '../components/ArtifactViewer'
 import SecurityPanel from '../components/SecurityPanel'
 import PackageManager from '../components/PackageManager'
+import GitCommitPanel from '../components/GitCommitPanel'
 import ClientOnly from '../components/ClientOnly'
+import { useSessionPersistence } from '../hooks/useSessionPersistence'
 
 // Use localhost since the browser runs on the host machine
 const API_URL = 'http://localhost:8000'
 
 export default function Home() {
-  const [session, setSession] = useState<any>(null)
+  const {
+    session,
+    isLoading: sessionLoading,
+    error: sessionError,
+    saveConversationMessage,
+    updateBranchState,
+    trackUploadedFile,
+    updateSandboxState
+  } = useSessionPersistence()
+  
   const [code, setCode] = useState(`print("Hello, whats up AIDO Lab!")
 
 # Example: Create a simple data visualization
@@ -43,29 +54,34 @@ plt.show()
   const [currentBranch, setCurrentBranch] = useState('main')
   const [branchCodeCache, setBranchCodeCache] = useState<Record<string, string>>({})
 
+  // Load cached code when session is restored
   useEffect(() => {
-    createSession()
-  }, [])
-
-  const createSession = async () => {
-    // Only run on client side
-    if (typeof window === 'undefined') return
-    
-    try {
-      const response = await axios.post(`${API_URL}/api/sessions/create`)
-      setSession(response.data)
-      console.log('Session created:', response.data)
-      setOutput('Session created! Ready to execute code.')
-    } catch (error) {
-      console.error('Failed to create session:', error)
-      setOutput('Failed to create session. Check if backend is running.')
+    if (session && session.branch_code_cache) {
+      setBranchCodeCache(session.branch_code_cache)
+      setCurrentBranch(session.current_branch || 'main')
+      
+      // Load code for current branch
+      const currentCode = session.branch_code_cache[session.current_branch || 'main']
+      if (currentCode) {
+        setCode(currentCode)
+      }
     }
-  }
+  }, [session])
+
+  // Session loading state handling
+  useEffect(() => {
+    if (sessionLoading) {
+      setOutput('Restoring session...')
+    } else if (sessionError) {
+      setOutput(`Session error: ${sessionError}`)
+    } else if (session) {
+      setOutput(`Session ready: ${session.session_id.slice(0, 8)}...`)
+    }
+  }, [sessionLoading, sessionError, session])
 
   const executeCode = async () => {
     if (!session) {
-      setOutput('No session. Creating one...')
-      await createSession()
+      setOutput('No session available. Please refresh the page.')
       return
     }
     
@@ -120,17 +136,23 @@ plt.show()
     }
   }
 
-  const handleCommitCode = async () => {
+  const handleCommitCode = async (message: string, description?: string) => {
     if (!session || !code.trim()) return
     
     setIsCommitting(true)
     try {
-      const response = await axios.post(`${API_URL}/api/git/commit/${session.session_id}`, {
-        message: `Manual commit: ${new Date().toISOString()}`,
+      const commitPayload: any = {
+        message: message,
         code: code,
         branch: currentBranch
-      })
-      setOutput(prev => prev + '\n\n✅ Code committed to git: ' + response.data.sha + ` (${currentBranch})`)
+      }
+      
+      if (description) {
+        commitPayload.description = description
+      }
+      
+      const response = await axios.post(`${API_URL}/api/git/commit/${session.session_id}`, commitPayload)
+      setOutput(prev => prev + '\n\n✅ Code committed to git: ' + response.data.sha + ` (${currentBranch})\n   Message: ${message}`)
       
       // Trigger git history refresh by dispatching a custom event
       window.dispatchEvent(new CustomEvent('gitHistoryUpdate', { 
@@ -145,14 +167,17 @@ plt.show()
   }
 
   const handleBranchSwitch = async (branchName: string) => {
-    // Save current code to cache before switching
+    // Save current code to session before switching
+    await updateBranchState(currentBranch, code)
+    
+    // Update local cache
     setBranchCodeCache(prev => ({
       ...prev,
       [currentBranch]: code
     }))
     
     // Load code for the new branch
-    const cachedCode = branchCodeCache[branchName]
+    const cachedCode = branchCodeCache[branchName] || session?.branch_code_cache?.[branchName]
     if (cachedCode) {
       setCode(cachedCode)
     } else {
@@ -174,9 +199,12 @@ plt.show()
     
     setCurrentBranch(branchName)
     setOutput(prev => prev + '\n\n🌿 Switched to branch: ' + branchName)
+    
+    // Update session with new branch
+    await updateBranchState(branchName, code)
   }
 
-  const handleBranchCreate = (branchName: string, fromBranch: string) => {
+  const handleBranchCreate = async (branchName: string, fromBranch: string) => {
     // Cache current code when creating a new branch
     setBranchCodeCache(prev => ({
       ...prev,
@@ -186,6 +214,9 @@ plt.show()
     
     setCurrentBranch(branchName)
     setOutput(prev => prev + '\n\n🌿 Created and switched to branch: ' + branchName)
+    
+    // Update session with new branch
+    await updateBranchState(branchName, code)
   }
 
   return (
@@ -241,8 +272,6 @@ plt.show()
                   onChange={setCode}
                   onExecute={executeCode}
                   isExecuting={isExecuting}
-                  onSave={handleCommitCode}
-                  isSaving={isCommitting}
                 />
               </div>
             </div>
@@ -258,8 +287,8 @@ plt.show()
             </div>
           </div>
 
-          {/* Second Row - AI Chat, Version Tree, Packages */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Second Row - AI Chat and Packages */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* AI Assistant */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
               <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-b border-white/10 p-4">
@@ -290,49 +319,6 @@ plt.show()
                       <div className="text-center">
                         <div className="w-12 h-12 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
                         <p>Initializing session...</p>
-                      </div>
-                    </div>
-                  )}
-                </ClientOnly>
-              </div>
-            </div>
-
-            {/* Version Tree */}
-            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border-b border-white/10 p-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
-                  <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
-                  Analysis History
-                  <span className="ml-auto text-xs bg-cyan-500/20 px-2 py-1 rounded-full text-cyan-300">
-                    Git
-                  </span>
-                </h2>
-              </div>
-              <div className="h-96">
-                <ClientOnly fallback={
-                  <div className="flex items-center justify-center h-full text-gray-400">
-                    <div className="text-center">
-                      <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <p>Loading History...</p>
-                    </div>
-                  </div>
-                }>
-                  {session ? (
-                    <SimpleVersionTree 
-                      sessionId={session.session_id}
-                      currentBranch={currentBranch}
-                      onCodeRevert={handleCodeRevert}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400">
-                      <div className="text-center">
-                        <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <p>No commits yet</p>
-                        <p className="text-sm mt-1">Run code to create history</p>
                       </div>
                     </div>
                   )}
@@ -373,10 +359,95 @@ plt.show()
                 </ClientOnly>
               </div>
             </div>
-
           </div>
 
-          {/* Third Row - Security and Artifacts */}
+          {/* Third Row - Version Tree (Full Width) */}
+          <div className="grid grid-cols-1 gap-6">
+            {/* Version Tree */}
+            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border-b border-white/10 p-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
+                  <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
+                  Analysis History
+                  <span className="ml-auto text-xs bg-cyan-500/20 px-2 py-1 rounded-full text-cyan-300">
+                    Git
+                  </span>
+                </h2>
+              </div>
+              <div className="h-[600px] overflow-y-auto">
+                <ClientOnly fallback={
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p>Loading History...</p>
+                    </div>
+                  </div>
+                }>
+                  {session ? (
+                    <SimpleVersionTree 
+                      sessionId={session.session_id}
+                      currentBranch={currentBranch}
+                      onCodeRevert={handleCodeRevert}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <div className="text-center">
+                        <svg className="w-12 h-12 mx-auto mb-4 text-cyan-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p>No commits yet</p>
+                        <p className="text-sm mt-1">Run code to create history</p>
+                      </div>
+                    </div>
+                  )}
+                </ClientOnly>
+              </div>
+            </div>
+          </div>
+
+          {/* Fourth Row - Git Commit Panel (Full Width) */}
+          <div className="grid grid-cols-1 gap-6">
+            {/* Git Commit Panel */}
+            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-b border-white/10 p-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                  Version Control
+                  <span className="ml-auto text-xs bg-green-500/20 px-2 py-1 rounded-full text-green-300">
+                    Git
+                  </span>
+                </h2>
+              </div>
+              <div className="p-6 h-[600px] overflow-y-auto">
+                <ClientOnly fallback={
+                  <div className="flex items-center justify-center h-32 text-gray-400">
+                    <div className="text-center">
+                      <div className="w-8 h-8 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin mx-auto mb-2"></div>
+                      <p className="text-sm">Loading Git Panel...</p>
+                    </div>
+                  </div>
+                }>
+                  {session ? (
+                    <GitCommitPanel 
+                      sessionId={session.session_id}
+                      currentBranch={currentBranch}
+                      code={code}
+                      onCommit={handleCommitCode}
+                      isCommitting={isCommitting}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-32 text-gray-400">
+                      <p className="text-sm">Initializing session...</p>
+                    </div>
+                  )}
+                </ClientOnly>
+              </div>
+            </div>
+          </div>
+
+          {/* Fourth Row - Security and Artifacts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Security Panel */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">

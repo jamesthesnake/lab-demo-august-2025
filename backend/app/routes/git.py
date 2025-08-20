@@ -9,9 +9,11 @@ from datetime import datetime
 import logging
 import os
 import json
+import time
 from pathlib import Path
 
 from ..services.git_service import GitService
+from ..services.git_session_manager import GitSessionManager
 from app.models.database import get_db, Session as DBSession
 from pydantic import BaseModel
 
@@ -49,6 +51,7 @@ class CommitRequest(BaseModel):
     message: str
     code: str
     branch: Optional[str] = "main"
+    description: Optional[str] = None
 
 class BranchCreateRequest(BaseModel):
     name: str
@@ -98,15 +101,59 @@ async def manual_commit(session_id: str, request: CommitRequest):
         # Get current branch from request or default to main
         current_branch = request.branch
         
+        # Generate descriptive commit message if not provided
+        if not request.message or request.message.strip() == "":
+            def generate_commit_message(code: str) -> str:
+                lines = code.strip().split('\n')
+                first_line = lines[0].strip() if lines else ""
+                
+                # Generate message based on code patterns
+                if 'plt.' in code or 'matplotlib' in code:
+                    return "Create data visualization"
+                elif 'pd.' in code or 'pandas' in code:
+                    if '.read_' in code:
+                        return "Load and analyze data"
+                    elif '.plot' in code or '.hist' in code:
+                        return "Generate data plots"
+                    else:
+                        return "Process data with pandas"
+                elif 'np.' in code or 'numpy' in code:
+                    return "Perform numerical computation"
+                elif 'def ' in code:
+                    func_name = ""
+                    for line in lines:
+                        if line.strip().startswith('def '):
+                            func_name = line.strip().split('(')[0].replace('def ', '')
+                            break
+                    return f"Define function: {func_name}" if func_name else "Define new function"
+                elif 'print(' in code:
+                    return "Display output"
+                else:
+                    code_preview = first_line[:40].replace('\n', ' ')
+                    if len(first_line) > 40:
+                        code_preview += "..."
+                    return f"Execute: {code_preview}" if code_preview else "Execute code"
+            
+            commit_message = generate_commit_message(request.code)
+        else:
+            commit_message = request.message
+        
         # Create commit entry in memory
+        import hashlib
+        # Generate a proper git-style SHA hash
+        content_hash = hashlib.sha1(f"{request.code}{commit_message}{time.time()}".encode()).hexdigest()
         commit_data = {
-            "sha": f"commit_{int(time.time())}_{hash(request.code) % 10000:04d}",
-            "message": request.message,
+            "sha": content_hash,
+            "message": commit_message,
             "author": "AIDO User",
             "timestamp": datetime.now().isoformat(),
             "branch": current_branch,
             "code": request.code
         }
+        
+        # Add description if provided
+        if request.description:
+            commit_data["description"] = request.description
         
         # Load existing commits and add new one
         commits = load_session_commits(session_id)
@@ -440,21 +487,41 @@ async def get_file_content(session_id: str, commit_sha: str, file_path: str):
         logger.error(f"Failed to get file content for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get file content: {str(e)}")
 
-@router.get("/api/git/sessions/{session_id}/commits/{commit_sha}/code")
+@router.get("/sessions/{session_id}/commits/{commit_sha}/code")
 async def get_commit_code(session_id: str, commit_sha: str):
     """Get the code from a specific commit"""
     try:
         git_service = GitService()
         
-        # Get commit details
-        commits = await git_service.get_commits_by_branch(session_id, "main")
-        
-        # Find the specific commit
+        # Try GitService first, then fallback to file-based commits
         target_commit = None
-        for commit in commits:
-            if commit.sha.startswith(commit_sha):
-                target_commit = commit
-                break
+        
+        try:
+            # Get commit details from GitService
+            commits = await git_service.get_commits_by_branch(session_id, "main")
+            
+            # Find the specific commit
+            for commit in commits:
+                if commit.sha.startswith(commit_sha):
+                    target_commit = commit
+                    break
+        except Exception as git_error:
+            logger.warning(f"GitService failed, trying file-based commits: {git_error}")
+            
+            # Fallback to file-based commits
+            commits = get_commits_by_branch(session_id, "main")
+            for commit in commits:
+                if commit.get('sha', '').startswith(commit_sha):
+                    # Convert dict to object-like structure
+                    class CommitObj:
+                        def __init__(self, data):
+                            self.sha = data.get('sha')
+                            self.message = data.get('message')
+                            self.timestamp = data.get('timestamp')
+                            self.execution_info = {'code': data.get('code', '')}
+                    
+                    target_commit = CommitObj(commit)
+                    break
         
         if not target_commit:
             raise HTTPException(status_code=404, detail="Commit not found")
@@ -505,34 +572,64 @@ async def get_commit_code(session_id: str, commit_sha: str):
         logger.error(f"Error retrieving commit code: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve commit code")
 
-@router.get("/api/git/sessions/{session_id}/artifacts")
+@router.get("/sessions/{session_id}/artifacts")
 async def get_session_artifacts(session_id: str, branch: str = "main"):
     """Get artifacts filtered by branch"""
     try:
-        # Get commits for the specified branch
-        commits = get_commits_by_branch(session_id, branch)
-        
-        # Collect all artifacts from commits on this branch
-        branch_artifacts = []
-        for commit in commits:
-            if 'artifacts' in commit:
-                for artifact in commit['artifacts']:
-                    # Add commit info to artifact for context
-                    artifact_with_context = {
-                        **artifact,
-                        'commit_sha': commit.get('sha'),
-                        'commit_message': commit.get('message'),
-                        'timestamp': commit.get('timestamp'),
-                        'branch': branch
-                    }
-                    branch_artifacts.append(artifact_with_context)
-        
-        return {
-            "session_id": session_id,
-            "branch": branch,
-            "artifacts": branch_artifacts,
-            "total": len(branch_artifacts)
-        }
+        # Try to get commits from GitService first
+        try:
+            git_service = GitService()
+            commits = await git_service.get_commits_by_branch(session_id, branch)
+            
+            # Collect all artifacts from commits on this branch
+            branch_artifacts = []
+            for commit in commits:
+                if hasattr(commit, 'execution_info') and commit.execution_info:
+                    artifacts = commit.execution_info.get('artifacts', [])
+                    for artifact in artifacts:
+                        # Add commit info to artifact for context
+                        artifact_with_context = {
+                            **artifact,
+                            'commit_sha': commit.sha,
+                            'commit_message': commit.message,
+                            'timestamp': commit.timestamp.isoformat() if hasattr(commit.timestamp, 'isoformat') else str(commit.timestamp),
+                            'branch': branch
+                        }
+                        branch_artifacts.append(artifact_with_context)
+            
+            return {
+                "session_id": session_id,
+                "branch": branch,
+                "artifacts": branch_artifacts,
+                "total": len(branch_artifacts)
+            }
+        except Exception as git_error:
+            logger.warning(f"GitService failed, trying file-based commits: {git_error}")
+            
+            # Fallback to file-based commits
+            commits = get_commits_by_branch(session_id, branch)
+            
+            # Collect all artifacts from commits on this branch
+            branch_artifacts = []
+            for commit in commits:
+                if 'artifacts' in commit:
+                    for artifact in commit['artifacts']:
+                        # Add commit info to artifact for context
+                        artifact_with_context = {
+                            **artifact,
+                            'commit_sha': commit.get('sha'),
+                            'commit_message': commit.get('message'),
+                            'timestamp': commit.get('timestamp'),
+                            'branch': branch
+                        }
+                        branch_artifacts.append(artifact_with_context)
+            
+            return {
+                "session_id": session_id,
+                "branch": branch,
+                "artifacts": branch_artifacts,
+                "total": len(branch_artifacts)
+            }
     except Exception as e:
         logger.error(f"Failed to get artifacts for session {session_id}, branch {branch}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get artifacts: {str(e)}")

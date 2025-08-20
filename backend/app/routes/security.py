@@ -146,8 +146,8 @@ async def security_health_check(
         
     except Exception as e:
         logger.error(f"Security health check failed: {e}")
-        return {
+        raise HTTPException(status_code=500, detail={
             "status": "unhealthy",
             "error": str(e),
             "docker_available": False
-        }
+        })

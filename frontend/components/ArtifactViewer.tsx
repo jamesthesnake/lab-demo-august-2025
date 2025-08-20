@@ -176,7 +176,7 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
           <div className="bg-slate-800 rounded-lg p-6 max-w-6xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white">
-                Table Data ({tableData.shape[0]} rows × {tableData.shape[1]} columns)
+                Table Data ({tableData?.shape?.[0] || 0} rows × {tableData?.shape?.[1] || 0} columns)
               </h3>
               <button
                 onClick={() => setTableData(null)}
@@ -195,7 +195,7 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-600">
-                      {tableData.columns.map((col, i) => (
+                      {tableData?.columns?.map((col, i) => (
                         <th key={i} className="text-left p-2 text-cyan-400 font-medium">
                           {col}
                         </th>
@@ -203,9 +203,9 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
                     </tr>
                   </thead>
                   <tbody>
-                    {tableData.data.slice(0, 100).map((row, i) => (
+                    {tableData?.data?.slice(0, 100).map((row, i) => (
                       <tr key={i} className="border-b border-gray-700/50">
-                        {row.map((cell, j) => (
+                        {row?.map((cell, j) => (
                           <td key={j} className="p-2 text-gray-300">
                             {cell}
                           </td>
@@ -214,9 +214,9 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
                     ))}
                   </tbody>
                 </table>
-                {tableData.data.length > 100 && (
+                {tableData?.data?.length > 100 && (
                   <div className="text-center text-gray-400 text-xs mt-2">
-                    Showing first 100 rows of {tableData.data.length}
+                    Showing first 100 rows of {tableData?.data?.length}
                   </div>
                 )}
               </div>
