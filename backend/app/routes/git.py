@@ -3,16 +3,15 @@ Git session management API routes
 Handles version control operations for sessions
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, List, Any, Optional
-import logging
-import time
-import json
-import os
+from fastapi import APIRouter, HTTPException, Query
+from typing import Dict, List, Optional, Any
 from datetime import datetime
+import logging
+import os
+import json
 from pathlib import Path
 
-from app.services.git_session_manager import GitSessionManager
+from ..services.git_service import GitService
 from app.models.database import get_db, Session as DBSession
 from pydantic import BaseModel
 
@@ -441,8 +440,73 @@ async def get_file_content(session_id: str, commit_sha: str, file_path: str):
         logger.error(f"Failed to get file content for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get file content: {str(e)}")
 
-@router.get("/sessions/{session_id}/artifacts")
-async def get_artifacts_by_branch(session_id: str, branch: str = "main"):
+@router.get("/api/git/sessions/{session_id}/commits/{commit_sha}/code")
+async def get_commit_code(session_id: str, commit_sha: str):
+    """Get the code from a specific commit"""
+    try:
+        git_service = GitService()
+        
+        # Get commit details
+        commits = await git_service.get_commits_by_branch(session_id, "main")
+        
+        # Find the specific commit
+        target_commit = None
+        for commit in commits:
+            if commit.sha.startswith(commit_sha):
+                target_commit = commit
+                break
+        
+        if not target_commit:
+            raise HTTPException(status_code=404, detail="Commit not found")
+        
+        # Extract code from execution_info instead of metadata
+        code = ""
+        if hasattr(target_commit, 'execution_info') and target_commit.execution_info:
+            if isinstance(target_commit.execution_info, dict):
+                code = target_commit.execution_info.get('code', '')
+            elif hasattr(target_commit.execution_info, 'get'):
+                code = target_commit.execution_info.get('code', '')
+        
+        # If no code found in execution_info, try to read from the committed file
+        if not code:
+            try:
+                # Try to find the execution file in the commit
+                workspace_path = f"/app/workspaces/{session_id}"
+                executions_dir = os.path.join(workspace_path, "executions")
+                if os.path.exists(executions_dir):
+                    # Find the most recent execution file
+                    execution_files = [f for f in os.listdir(executions_dir) if f.endswith('.py')]
+                    if execution_files:
+                        execution_files.sort(reverse=True)
+                        latest_file = os.path.join(executions_dir, execution_files[0])
+                        with open(latest_file, 'r') as f:
+                            content = f.read()
+                            # Extract just the code part (skip the header comments)
+                            lines = content.split('\n')
+                            code_lines = []
+                            skip_header = True
+                            for line in lines:
+                                if skip_header and (line.startswith('#') or line.strip() == ''):
+                                    continue
+                                skip_header = False
+                                code_lines.append(line)
+                            code = '\n'.join(code_lines)
+            except Exception as e:
+                logger.warning(f"Could not read execution file: {e}")
+        
+        return {
+            "commit_sha": target_commit.sha,
+            "code": code,
+            "message": target_commit.message,
+            "timestamp": target_commit.timestamp
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving commit code: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve commit code")
+
+@router.get("/api/git/sessions/{session_id}/artifacts")
+async def get_session_artifacts(session_id: str, branch: str = "main"):
     """Get artifacts filtered by branch"""
     try:
         # Get commits for the specified branch

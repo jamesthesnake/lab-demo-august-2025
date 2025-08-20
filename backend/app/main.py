@@ -2,7 +2,7 @@
 Main FastAPI Application
 Central API server for AIDO-Lab
 """
-from app.routes import streaming, git, security, artifacts, debug, chat, rate_limit
+from app.routes import streaming, git, security, artifacts, debug, chat, rate_limit, packages
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -161,7 +161,7 @@ app.include_router(chat.router)
 app.include_router(git.router)
 app.include_router(security.router)
 app.include_router(streaming.router)
-app.include_router(chat.router)
+app.include_router(packages.router)
 app.include_router(rate_limit.router)
 
 # Mount workspace files for serving plots and tables

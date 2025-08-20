@@ -231,12 +231,77 @@ Thumbs.db
         if os.path.exists(notebook_path):
             repo.index.add(["session.ipynb"])
         
-        # Create commit message
-        code_preview = code[:50].replace('\n', ' ')
-        if len(code) > 50:
-            code_preview += "..."
+        # Add any artifact files from the workspace
+        workspace_artifacts = Path(f"/app/workspaces/{session_id}")
+        if workspace_artifacts.exists():
+            for artifact_file in workspace_artifacts.glob("*.png"):
+                try:
+                    repo.index.add([str(artifact_file.relative_to(Path(repo_path)))])
+                except:
+                    pass  # Skip if file is outside repo
+            for artifact_file in workspace_artifacts.glob("*.csv"):
+                try:
+                    repo.index.add([str(artifact_file.relative_to(Path(repo_path)))])
+                except:
+                    pass  # Skip if file is outside repo
         
-        commit_message = f"Execute: {code_preview}"
+        # Create descriptive commit message based on code content
+        def generate_commit_message(code: str, results: Dict[str, Any]) -> str:
+            lines = code.strip().split('\n')
+            first_line = lines[0].strip() if lines else ""
+            
+            # Detect common patterns and create meaningful messages
+            if 'import' in first_line.lower():
+                if len(lines) > 1:
+                    # Look for the main action after imports
+                    for line in lines[1:]:
+                        line = line.strip()
+                        if line and not line.startswith('#') and not line.startswith('import'):
+                            first_line = line
+                            break
+            
+            # Generate message based on code patterns
+            if 'plt.' in code or 'matplotlib' in code:
+                return "Create data visualization"
+            elif 'pd.' in code or 'pandas' in code:
+                if '.read_' in code:
+                    return "Load and analyze data"
+                elif '.plot' in code or '.hist' in code:
+                    return "Generate data plots"
+                else:
+                    return "Process data with pandas"
+            elif 'np.' in code or 'numpy' in code:
+                return "Perform numerical computation"
+            elif 'def ' in code:
+                func_name = ""
+                for line in lines:
+                    if line.strip().startswith('def '):
+                        func_name = line.strip().split('(')[0].replace('def ', '')
+                        break
+                return f"Define function: {func_name}" if func_name else "Define new function"
+            elif 'class ' in code:
+                class_name = ""
+                for line in lines:
+                    if line.strip().startswith('class '):
+                        class_name = line.strip().split('(')[0].split(':')[0].replace('class ', '')
+                        break
+                return f"Create class: {class_name}" if class_name else "Create new class"
+            elif 'print(' in code:
+                return "Display output"
+            elif any(op in code for op in ['=', '+=', '-=', '*=', '/=']):
+                return "Perform calculations"
+            elif 'for ' in code or 'while ' in code:
+                return "Execute loop operations"
+            elif 'if ' in code:
+                return "Execute conditional logic"
+            else:
+                # Fallback to first meaningful line
+                code_preview = first_line[:40].replace('\n', ' ')
+                if len(first_line) > 40:
+                    code_preview += "..."
+                return f"Execute: {code_preview}" if code_preview else "Execute code"
+        
+        commit_message = generate_commit_message(code, results)
         if results.get("status") == "error":
             commit_message = f"[ERROR] {commit_message}"
         

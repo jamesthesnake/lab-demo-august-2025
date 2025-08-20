@@ -13,9 +13,10 @@ interface Commit {
 interface SimpleVersionTreeProps {
   sessionId: string
   currentBranch?: string
+  onCodeRevert?: (commitSha: string) => void
 }
 
-export default function SimpleVersionTree({ sessionId, currentBranch }: SimpleVersionTreeProps) {
+export default function SimpleVersionTree({ sessionId, currentBranch, onCodeRevert }: SimpleVersionTreeProps) {
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -119,6 +120,15 @@ export default function SimpleVersionTree({ sessionId, currentBranch }: SimpleVe
                     {formatTimestamp(commit.timestamp)}
                   </p>
                 </div>
+                {onCodeRevert && (
+                  <button
+                    onClick={() => onCodeRevert(commit.sha)}
+                    className="flex-shrink-0 px-2 py-1 text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-600/30 transition-colors"
+                    title="Revert code to this commit"
+                  >
+                    Revert
+                  </button>
+                )}
               </div>
             ))}
           </div>
