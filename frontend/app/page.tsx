@@ -7,6 +7,7 @@ import BranchManager from '../components/BranchManager'
 import CodeEditor from '../components/CodeEditor'
 import OutputConsole from '../components/OutputConsole'
 import SimpleVersionTree from '../components/SimpleVersionTree'
+import ArtifactViewer from '../components/ArtifactViewer'
 import SecurityPanel from '../components/SecurityPanel'
 import ClientOnly from '../components/ClientOnly'
 
@@ -37,6 +38,7 @@ plt.show()
   const [output, setOutput] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
   const [isCommitting, setIsCommitting] = useState(false)
+  const [artifacts, setArtifacts] = useState<any[]>([])
   const [currentBranch, setCurrentBranch] = useState('main')
   const [branchCodeCache, setBranchCodeCache] = useState<Record<string, string>>({})
 
@@ -76,11 +78,20 @@ plt.show()
         is_natural_language: false,
       })
       
-      const result = response.data.results
-      setOutput(result.stdout || result.stderr || 'No output')
+      const result = response.data
+      const stdout = result.results?.stdout || result.stdout || ''
+      const stderr = result.results?.stderr || result.stderr || ''
+      
+      setOutput(stdout + (stderr ? '\nErrors: ' + stderr : ''))
+      
+      // Update artifacts if any were generated
+      const artifacts = result.results?.artifacts || result.artifacts || []
+      if (artifacts.length > 0) {
+        setArtifacts(artifacts)
+      }
     } catch (error: any) {
       console.error('Execution failed:', error)
-      setOutput(`Execution failed: ${error.message}`)
+      setOutput(prev => prev + '\n\nExecution failed: ' + error.message)
     } finally {
       setIsExecuting(false)
     }
@@ -103,13 +114,14 @@ plt.show()
     try {
       const response = await axios.post(`${API_URL}/api/git/commit/${session.session_id}`, {
         message: `Manual commit: ${new Date().toISOString()}`,
-        code: code
+        code: code,
+        branch: currentBranch
       })
-      setOutput(prev => prev + '\n\n✅ Code committed to git: ' + response.data.sha)
+      setOutput(prev => prev + '\n\n✅ Code committed to git: ' + response.data.sha + ` (${currentBranch})`)
       
       // Trigger git history refresh by dispatching a custom event
       window.dispatchEvent(new CustomEvent('gitHistoryUpdate', { 
-        detail: { sessionId: session.session_id, commitSha: response.data.sha } 
+        detail: { sessionId: session.session_id, commitSha: response.data.sha, branch: currentBranch } 
       }))
     } catch (error: any) {
       console.error('Commit failed:', error)
@@ -299,8 +311,8 @@ import matplotlib.pyplot as plt
             </div>
           </div>
 
-          {/* Bottom Row - AI Chat, Version Tree, and Security */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Bottom Row - AI Chat, Version Tree, Security, and Artifacts */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* AI Assistant */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
               <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-b border-white/10 p-4">
@@ -363,6 +375,7 @@ import matplotlib.pyplot as plt
                   {session ? (
                     <SimpleVersionTree 
                       sessionId={session.session_id}
+                      currentBranch={currentBranch}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-400">
@@ -400,6 +413,52 @@ import matplotlib.pyplot as plt
                   </div>
                 }>
                   <SecurityPanel />
+                </ClientOnly>
+              </div>
+            </div>
+
+            {/* Artifacts Panel */}
+            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 border-b border-white/10 p-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                  Plots & Tables
+                  <span className="ml-2 text-xs bg-blue-500/20 px-2 py-1 rounded-full text-blue-300">
+                    {currentBranch}
+                  </span>
+                  <span className="ml-auto text-xs bg-green-500/20 px-2 py-1 rounded-full text-green-300">
+                    {artifacts.length}
+                  </span>
+                </h2>
+              </div>
+              <div className="h-96 overflow-y-auto">
+                <ClientOnly fallback={
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <div className="w-12 h-12 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin mx-auto mb-4"></div>
+                      <p>Loading Artifacts...</p>
+                    </div>
+                  </div>
+                }>
+                  {session ? (
+                    <div className="p-4">
+                      <ArtifactViewer 
+                        sessionId={session.session_id}
+                        artifacts={artifacts}
+                        currentBranch={currentBranch}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <div className="text-center">
+                        <svg className="w-12 h-12 mx-auto mb-4 text-green-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <p>No artifacts yet</p>
+                        <p className="text-sm mt-1">Run code with plots or tables</p>
+                      </div>
+                    </div>
+                  )}
                 </ClientOnly>
               </div>
             </div>

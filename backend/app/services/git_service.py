@@ -195,6 +195,7 @@ Thumbs.db
                 "errors": results.get("errors", []),
                 "status": results.get("status", "ok")
             },
+            "artifacts": results.get("artifacts", []),
             "metadata": metadata or {}
         }
         

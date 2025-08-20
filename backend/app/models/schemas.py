@@ -127,6 +127,7 @@ class ExecutionResultData(BaseModel):
     errors: List[Dict[str, Any]] = Field([], description="Execution errors")
     execution_count: int = Field(0, description="Execution count")
     status: ExecutionStatus = Field(ExecutionStatus.OK, description="Execution status")
+    artifacts: List[Dict[str, Any]] = Field([], description="Generated artifacts (plots, tables, files)")
 
 class CommitInfoResponse(BaseModel):
     """Git commit information"""

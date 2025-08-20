@@ -7,14 +7,49 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, List, Any, Optional
 import logging
 import time
+import json
+import os
+from datetime import datetime
+from pathlib import Path
 
 from app.services.git_session_manager import GitSessionManager
 from app.models.database import get_db, Session as DBSession
 from pydantic import BaseModel
 
+# File-based commit storage
+COMMITS_DIR = Path("/tmp/aido-commits")
+COMMITS_DIR.mkdir(exist_ok=True)
+
+def get_commits_file(session_id: str) -> Path:
+    return COMMITS_DIR / f"{session_id}.json"
+
+def load_session_commits(session_id: str) -> List[Dict[str, Any]]:
+    commits_file = get_commits_file(session_id)
+    if commits_file.exists():
+        try:
+            with open(commits_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load commits for {session_id}: {e}")
+    return []
+
+def save_session_commits(session_id: str, commits: List[Dict[str, Any]]):
+    commits_file = get_commits_file(session_id)
+    try:
+        with open(commits_file, 'w') as f:
+            json.dump(commits, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save commits for {session_id}: {e}")
+
+def get_commits_by_branch(session_id: str, branch: str) -> List[Dict[str, Any]]:
+    """Get commits filtered by branch"""
+    all_commits = load_session_commits(session_id)
+    return [commit for commit in all_commits if commit.get('branch') == branch]
+
 class CommitRequest(BaseModel):
     message: str
     code: str
+    branch: Optional[str] = "main"
 
 class BranchCreateRequest(BaseModel):
     name: str
@@ -61,36 +96,42 @@ async def get_session_info(session_id: str):
 async def manual_commit(session_id: str, request: CommitRequest):
     """Manually commit code to git for a session"""
     try:
-        from app.main import git_service
+        # Get current branch from request or default to main
+        current_branch = request.branch
         
-        # Prepare results for git service
-        results = {
-            "stdout": "Manual commit - no execution",
-            "stderr": "",
-            "execution_count": 0,
-            "status": "manual",
-            "artifacts": [],
-            "execution_time": 0.0
+        # Create commit entry in memory
+        commit_data = {
+            "sha": f"commit_{int(time.time())}_{hash(request.code) % 10000:04d}",
+            "message": request.message,
+            "author": "AIDO User",
+            "timestamp": datetime.now().isoformat(),
+            "branch": current_branch,
+            "code": request.code
         }
         
-        metadata = {
-            "commit_message": request.message,
-            "manual_commit": True
-        }
+        # Load existing commits and add new one
+        commits = load_session_commits(session_id)
+        commits.insert(0, commit_data)  # Insert at beginning for latest first
         
-        # Commit to git using the correct method signature
-        commit_info = await git_service.save_execution(session_id, request.code, results, metadata)
+        # Keep only last 50 commits
+        if len(commits) > 50:
+            commits = commits[:50]
+        
+        # Save commits to file
+        save_session_commits(session_id, commits)
+        
+        logger.info(f"Manual commit created for session {session_id}: {commit_data['sha']} - Total commits: {len(commits)}")
         
         return {
             "status": "committed",
-            "session_id": session_id,
-            "sha": commit_info.sha,
-            "branch": commit_info.branch,
-            "message": request.message
+            "sha": commit_data["sha"],
+            "message": commit_data["message"],
+            "branch": commit_data["branch"],
+            "timestamp": commit_data["timestamp"]
         }
     except Exception as e:
-        logger.error(f"Failed to commit for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to commit: {str(e)}")
+        logger.error(f"Manual commit failed for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Commit failed: {str(e)}")
 
 @router.get("/sessions/{session_id}/branches")
 async def get_branches(session_id: str):
@@ -181,17 +222,27 @@ async def switch_branch(session_id: str, request: BranchSwitchRequest):
         raise HTTPException(status_code=500, detail=f"Failed to switch branch: {str(e)}")
 
 @router.get("/sessions/{session_id}/history")
-async def get_commit_history(session_id: str, limit: int = 50):
-    """Get commit history for session"""
+async def get_commit_history(session_id: str, limit: int = 50, branch: Optional[str] = None):
+    """Get commit history for session, optionally filtered by branch"""
     try:
-        history = git_session_manager.get_commit_history(session_id)
-        # Apply limit manually if needed
-        if limit and len(history) > limit:
-            history = history[:limit]
+        if branch:
+            # Get commits filtered by branch
+            commits = get_commits_by_branch(session_id, branch)
+            logger.info(f"Getting history for session {session_id} branch {branch}: {len(commits)} commits found")
+        else:
+            # Get all commits
+            commits = load_session_commits(session_id)
+            logger.info(f"Getting history for session {session_id}: {len(commits)} commits found")
+        
+        # Apply limit
+        if limit and len(commits) > limit:
+            commits = commits[:limit]
+        
         return {
             "session_id": session_id,
-            "commits": history,
-            "total": len(history)
+            "commits": commits,
+            "total": len(commits),
+            "branch": branch
         }
     except Exception as e:
         logger.error(f"Failed to get history for session {session_id}: {e}")
@@ -389,6 +440,38 @@ async def get_file_content(session_id: str, commit_sha: str, file_path: str):
     except Exception as e:
         logger.error(f"Failed to get file content for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get file content: {str(e)}")
+
+@router.get("/sessions/{session_id}/artifacts")
+async def get_artifacts_by_branch(session_id: str, branch: str = "main"):
+    """Get artifacts filtered by branch"""
+    try:
+        # Get commits for the specified branch
+        commits = get_commits_by_branch(session_id, branch)
+        
+        # Collect all artifacts from commits on this branch
+        branch_artifacts = []
+        for commit in commits:
+            if 'artifacts' in commit:
+                for artifact in commit['artifacts']:
+                    # Add commit info to artifact for context
+                    artifact_with_context = {
+                        **artifact,
+                        'commit_sha': commit.get('sha'),
+                        'commit_message': commit.get('message'),
+                        'timestamp': commit.get('timestamp'),
+                        'branch': branch
+                    }
+                    branch_artifacts.append(artifact_with_context)
+        
+        return {
+            "session_id": session_id,
+            "branch": branch,
+            "artifacts": branch_artifacts,
+            "total": len(branch_artifacts)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get artifacts for session {session_id}, branch {branch}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get artifacts: {str(e)}")
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):

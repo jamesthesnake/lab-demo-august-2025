@@ -36,7 +36,7 @@ export default function SecurityPanel() {
     if (typeof window === 'undefined') return
     
     try {
-      const response = await fetch('/api/security/health')
+      const response = await fetch('http://localhost:8000/api/security/health')
       if (response.ok) {
         const data = await response.json()
         setSecurityStatus(data)
@@ -65,7 +65,7 @@ export default function SecurityPanel() {
     if (typeof window === 'undefined') return
     
     try {
-      const response = await fetch('/api/security/containers')
+      const response = await fetch('http://localhost:8000/api/security/containers')
       if (response.ok) {
         const data = await response.json()
         setContainers(data.active_containers || {})
@@ -84,7 +84,7 @@ export default function SecurityPanel() {
 
     setLoading(true)
     try {
-      const response = await fetch('/api/security/panic', { method: 'POST' })
+      const response = await fetch('http://localhost:8000/api/security/panic', { method: 'POST' })
       const result = await response.json()
       
       if (response.ok) {
@@ -105,7 +105,7 @@ export default function SecurityPanel() {
     if (!confirm(`Kill container ${containerId.slice(0, 12)}?`)) return
 
     try {
-      const response = await fetch(`/api/security/containers/${containerId}`, { 
+      const response = await fetch(`http://localhost:8000/api/security/containers/${containerId}`, { 
         method: 'DELETE' 
       })
       

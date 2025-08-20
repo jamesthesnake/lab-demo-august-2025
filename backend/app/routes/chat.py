@@ -241,7 +241,7 @@ async def chat(request: ChatRequest):
             else:
                 final_message = assistant_message.content
         
-        # Save to Git
+        # Save to Git with artifacts
         commit_hash = None
         if git_service and code_executed:
             try:
@@ -249,11 +249,40 @@ async def chat(request: ChatRequest):
                     session_id=request.session_id,
                     code=code_executed,
                     results=tool_results or {},
-                    metadata={"chat_message": request.message, "response": final_message}
+                    metadata={"chat_message": request.message, "response": final_message, "artifacts": artifacts}
                 )
                 commit_hash = commit_info.sha if hasattr(commit_info, 'sha') else None
             except Exception as e:
                 logger.error(f"Git commit failed: {e}")
+        
+        # Also save to file-based commit storage with artifacts
+        if code_executed:
+            try:
+                from app.routes.git import save_session_commits, load_session_commits
+                import time
+                from datetime import datetime
+                
+                commit_data = {
+                    "sha": f"chat_{int(time.time())}_{hash(code_executed) % 10000:04d}",
+                    "message": f"Chat execution: {request.message[:50]}...",
+                    "author": "AIDO Chat",
+                    "timestamp": datetime.now().isoformat(),
+                    "branch": "main",
+                    "code": code_executed,
+                    "artifacts": artifacts
+                }
+                
+                commits = load_session_commits(request.session_id)
+                commits.insert(0, commit_data)
+                
+                # Keep only last 50 commits
+                if len(commits) > 50:
+                    commits = commits[:50]
+                
+                save_session_commits(request.session_id, commits)
+                logger.info(f"Chat execution committed with {len(artifacts)} artifacts")
+            except Exception as e:
+                logger.error(f"File-based commit failed: {e}")
         
         return ChatResponse(
             assistant_message=final_message or "I've executed the code.",

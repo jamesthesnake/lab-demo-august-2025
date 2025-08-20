@@ -12,9 +12,10 @@ interface Commit {
 
 interface SimpleVersionTreeProps {
   sessionId: string
+  currentBranch?: string
 }
 
-export default function SimpleVersionTree({ sessionId }: SimpleVersionTreeProps) {
+export default function SimpleVersionTree({ sessionId, currentBranch }: SimpleVersionTreeProps) {
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -30,14 +31,19 @@ export default function SimpleVersionTree({ sessionId }: SimpleVersionTreeProps)
       window.addEventListener('gitHistoryUpdate', handleGitUpdate)
       return () => window.removeEventListener('gitHistoryUpdate', handleGitUpdate)
     }
-  }, [sessionId])
+  }, [sessionId, currentBranch])
 
   const fetchHistory = async () => {
     if (!sessionId) return
     
     setLoading(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/git/sessions/${sessionId}/history`)
+      // Add branch parameter if specified
+      const url = currentBranch 
+        ? `http://localhost:8000/api/git/sessions/${sessionId}/history?branch=${currentBranch}`
+        : `http://localhost:8000/api/git/sessions/${sessionId}/history`
+      
+      const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
         setCommits(data.commits || [])
@@ -63,6 +69,11 @@ export default function SimpleVersionTree({ sessionId }: SimpleVersionTreeProps)
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
           <GitBranch className="w-5 h-5 text-cyan-400" />
           Version Tree
+          {currentBranch && (
+            <span className="text-xs bg-cyan-600/20 text-cyan-400 px-2 py-1 rounded">
+              {currentBranch}
+            </span>
+          )}
         </h3>
         <span className="text-xs text-slate-400">
           {commits.length} {commits.length === 1 ? 'commit' : 'commits'}

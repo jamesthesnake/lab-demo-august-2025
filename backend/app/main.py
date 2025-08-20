@@ -2,7 +2,7 @@
 Main FastAPI Application
 Central API server for AIDO-Lab
 """
-from app.routes import chat, git, security, streaming, debug, rate_limit, artifacts
+from app.routes import streaming, git, security, artifacts, debug, chat, rate_limit
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -161,8 +161,32 @@ app.include_router(chat.router)
 app.include_router(git.router)
 app.include_router(security.router)
 app.include_router(streaming.router)
-app.include_router(debug.router)
+app.include_router(chat.router)
 app.include_router(rate_limit.router)
+
+# Mount workspace files for serving plots and tables
+app.mount("/workspaces", StaticFiles(directory="/app/workspaces"), name="workspaces")
+
+# Add workspace files listing endpoint
+@app.get("/api/workspaces/{session_id}/files")
+async def list_workspace_files(session_id: str):
+    """List files in a session workspace"""
+    workspace_path = Path(f"/app/workspaces/{session_id}")
+    artifacts = []
+    
+    if workspace_path.exists():
+        for file_path in workspace_path.glob("*"):
+            if file_path.is_file() and file_path.suffix in ['.png', '.jpg', '.jpeg', '.csv', '.json', '.txt']:
+                artifact_info = {
+                    "filename": str(file_path.name),
+                    "type": "plot" if file_path.suffix in ['.png', '.jpg', '.jpeg'] else 
+                           "table" if file_path.suffix in ['.csv', '.json'] else "file",
+                    "size": file_path.stat().st_size
+                }
+                artifacts.append(artifact_info)
+    
+    return {"session_id": session_id, "artifacts": artifacts, "total": len(artifacts)}
+
 app.include_router(artifacts.router)
 
 # Configure CORS
@@ -356,8 +380,21 @@ async def execute_code(request: ExecuteRequest) -> ExecuteResponse:
             "timestamp": commit_info.timestamp,
             "parent_sha": commit_info.parent_sha,
             "branch": commit_info.branch,
-            "files_changed": commit_info.files_changed
+            "files_changed": commit_info.files_changed,
+            "artifacts": execution_result.to_dict().get("artifacts", [])
         }
+        
+        # Also save to file-based commit storage for branch filtering API
+        from app.routes.git import load_session_commits, save_session_commits
+        commits = load_session_commits(session_id)
+        commits.insert(0, commit_dict)  # Insert at beginning for latest first
+        
+        # Keep only last 50 commits
+        if len(commits) > 50:
+            commits = commits[:50]
+        
+        save_session_commits(session_id, commits)
+        
     except Exception as e:
         logger.error(f"Failed to save to git: {e}")
         commit_dict = None
@@ -391,7 +428,8 @@ async def execute_code(request: ExecuteRequest) -> ExecuteResponse:
         display_data=execution_result.display_data,
         errors=execution_result.errors,
         execution_count=execution_result.execution_count,
-        status=execution_result.status
+        status=execution_result.status,
+        artifacts=result_dict.get("artifacts", [])
     )
     
     response = ExecuteResponse(
