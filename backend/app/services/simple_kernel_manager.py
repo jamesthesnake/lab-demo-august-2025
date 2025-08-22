@@ -59,7 +59,7 @@ class SimpleKernelManager:
         
         logger.info("SimpleKernelManager initialized - using direct Python execution")
     
-    async def execute_code(self, session_id: str, code: str, execution_count: int = 1, timeout: int = None, user_message: str = None) -> ExecutionResult:
+    async def execute_code(self, session_id: str, code: str, execution_count: int = 1, timeout: int = None, user_message: str = None, branch_name: str = None) -> ExecutionResult:
         """Execute Python code directly via subprocess"""
         start_time = time.time()
         
@@ -70,7 +70,7 @@ class SimpleKernelManager:
             
             # Create temp file with enhanced code for artifact capture
             logger.info(f"About to enhance code for session {session_id}")
-            enhanced_code = self._enhance_code_for_artifacts(code, session_id, user_message)
+            enhanced_code = self._enhance_code_for_artifacts(code, session_id, user_message, branch_name)
             logger.info(f"Enhanced code generated, length: {len(enhanced_code)}")
             logger.info(f"Enhanced code preview:\n{enhanced_code[:800]}")
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
@@ -186,7 +186,7 @@ class SimpleKernelManager:
         logger.info(f"Kernel restart requested for session: {session_id}")
         return True
 
-    def _enhance_code_for_artifacts(self, code: str, session_id: str, user_message: str = None) -> str:
+    def _enhance_code_for_artifacts(self, code: str, session_id: str, user_message: str = None, branch_name: str = None) -> str:
         """Enhance code to automatically capture plots and tables"""
         try:
             # Extract meaningful names from code context and user message
@@ -217,6 +217,10 @@ class SimpleKernelManager:
             # Generate context-aware naming hints
             file_context = data_files[0].split('/')[-1].split('.')[0] if data_files else table_context
             plot_context = plot_types[0] if plot_types else "plot"
+            
+            # Add branch name to context if provided
+            if branch_name and branch_name != "main":
+                file_context = f"{file_context}_{branch_name}"
             
             # Use string formatting to avoid f-string conflicts
             enhanced_code = '''

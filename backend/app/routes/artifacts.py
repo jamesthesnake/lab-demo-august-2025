@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/artifacts", tags=["artifacts"])
 async def upload_artifact(
     session_id: str,
     file: UploadFile = File(...),
+    branch_name: str = None,
     background_tasks: BackgroundTasks = None
 ):
     """Upload an artifact file"""
@@ -31,7 +32,8 @@ async def upload_artifact(
         metadata = artifact_storage.store_artifact(
             content=content,
             filename=file.filename,
-            session_id=session_id
+            session_id=session_id,
+            branch_name=branch_name
         )
         
         # Get public URL

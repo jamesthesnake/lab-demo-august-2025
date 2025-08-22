@@ -359,11 +359,22 @@ async def execute_code(request: ExecuteRequest) -> ExecuteResponse:
         code = request.query
         code_metadata = {"generated": False}
     
+    # Get current branch name for artifact naming
+    current_branch = "main"  # default
+    try:
+        if session_id in git_service.repos:
+            repo = git_service.repos[session_id]
+            if not repo.head.is_detached:
+                current_branch = repo.active_branch.name
+    except Exception as e:
+        logger.warning(f"Could not get current branch for session {session_id}: {e}")
+    
     # Execute code
     execution_result = await kernel_manager.execute_code(
         session_id=session_id,
         code=code,
-        timeout=request.timeout
+        timeout=request.timeout,
+        branch_name=current_branch
     )
     
     # Save to git

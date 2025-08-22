@@ -70,10 +70,15 @@ class ArtifactStorage:
         }
         return content_types.get(ext, 'application/octet-stream')
     
-    def store_artifact(self, content: bytes, filename: str, session_id: str) -> ArtifactMetadata:
+    def store_artifact(self, content: bytes, filename: str, session_id: str, branch_name: str = None) -> ArtifactMetadata:
         """Store artifact and return metadata"""
         content_hash = self._calculate_hash(content)
         content_type = self._get_content_type(filename)
+        
+        # Modify filename to include branch name if provided
+        if branch_name:
+            name, ext = os.path.splitext(filename)
+            filename = f"{name}_{branch_name}{ext}"
         
         # Create metadata
         metadata = ArtifactMetadata(

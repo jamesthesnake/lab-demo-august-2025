@@ -151,8 +151,12 @@ When creating visualizations:
             if not self.api_key:
                 raise ValueError("Anthropic API key not provided")
             
-            self.client = AsyncAnthropic(api_key=self.api_key)
-            self.model = model or "claude-3-opus-20240229"
+            # Initialize with required headers
+            self.client = AsyncAnthropic(
+                api_key=self.api_key,
+                default_headers={"anthropic-version": "2023-06-01"}
+            )
+            self.model = model or "claude-3-5-sonnet-20241022"
             
         else:
             raise ValueError(f"Unsupported provider: {provider}")

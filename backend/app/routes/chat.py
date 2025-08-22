@@ -102,10 +102,22 @@ async def chat(request: ChatRequest):
     if not llm_service:
         # Fallback: Execute code directly if it looks like Python
         if request.message.strip().startswith(('import ', 'from ', 'print(', 'def ', 'class ', 'pd.', 'np.', 'plt.', 'sns.')):
+            # Get current branch for artifact naming
+            current_branch = "main"
+            try:
+                from app.main import git_service
+                if git_service and request.session_id in git_service.repos:
+                    repo = git_service.repos[request.session_id]
+                    if not repo.head.is_detached:
+                        current_branch = repo.active_branch.name
+            except Exception:
+                pass
+            
             # Direct code execution
             result = await kernel_manager.execute_code(
                 session_id=request.session_id,
-                code=request.message
+                code=request.message,
+                branch_name=current_branch
             )
             
             # Create a helpful response message
@@ -195,13 +207,25 @@ async def chat(request: ChatRequest):
                     # Parse code from function call
                     code = tool_args["code"]
                     
+                    # Get current branch for artifact naming
+                    current_branch = "main"
+                    try:
+                        from app.main import git_service
+                        if git_service and request.session_id in git_service.repos:
+                            repo = git_service.repos[request.session_id]
+                            if not repo.head.is_detached:
+                                current_branch = repo.active_branch.name
+                    except Exception:
+                        pass
+                    
                     # Execute code
                     result = await kernel_manager.execute_code(
                         session_id=request.session_id,
                         code=code,
                         execution_count=1,
                         timeout=30,
-                        user_message=request.message
+                        user_message=request.message,
+                        branch_name=current_branch
                     )
                     
                     code_executed = code

@@ -104,7 +104,17 @@ plt.show()"""
                             code = f"# Generated from: {request.message}\nprint('Please provide a more specific Python code request')"
                         yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
                         yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
-                        execution_result = await kernel_manager.execute_code(session_id, code)
+                        # Get current branch for artifact naming
+                        current_branch = "main"
+                        try:
+                            if git_service and session_id in git_service.repos:
+                                repo = git_service.repos[session_id]
+                                if not repo.head.is_detached:
+                                    current_branch = repo.active_branch.name
+                        except Exception:
+                            pass
+                        
+                        execution_result = await kernel_manager.execute_code(session_id, code, branch_name=current_branch)
                         result_data = execution_result.to_dict()
                         yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
                         yield f"{json.dumps({'type': 'complete', 'payload': 'Stream completed with fallback'})}\n\n"
@@ -121,7 +131,17 @@ plt.show()"""
                             # Execute code
                             yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
                             
-                            execution_result = await kernel_manager.execute_code(session_id, code)
+                            # Get current branch for artifact naming
+                        current_branch = "main"
+                        try:
+                            if git_service and session_id in git_service.repos:
+                                repo = git_service.repos[session_id]
+                                if not repo.head.is_detached:
+                                    current_branch = repo.active_branch.name
+                        except Exception:
+                            pass
+                        
+                        execution_result = await kernel_manager.execute_code(session_id, code, branch_name=current_branch)
                             
                             # Stream execution result
                             result_data = execution_result.to_dict()
@@ -232,7 +252,17 @@ plt.show()"""
                             code = f"# Generated from: {request.message}\nprint('Please provide a more specific Python code request')"
                         yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
                         yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
-                        execution_result = await kernel_manager.execute_code(session_id, code)
+                        # Get current branch for artifact naming
+                        current_branch = "main"
+                        try:
+                            if git_service and session_id in git_service.repos:
+                                repo = git_service.repos[session_id]
+                                if not repo.head.is_detached:
+                                    current_branch = repo.active_branch.name
+                        except Exception:
+                            pass
+                        
+                        execution_result = await kernel_manager.execute_code(session_id, code, branch_name=current_branch)
                         result_data = execution_result.to_dict()
                         yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
                         yield f"{json.dumps({'type': 'complete', 'payload': 'Stream completed with fallback'})}\n\n"
@@ -249,7 +279,17 @@ plt.show()"""
                             # Execute code
                             yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
                             
-                            execution_result = await kernel_manager.execute_code(session_id, code)
+                            # Get current branch for artifact naming
+                        current_branch = "main"
+                        try:
+                            if git_service and session_id in git_service.repos:
+                                repo = git_service.repos[session_id]
+                                if not repo.head.is_detached:
+                                    current_branch = repo.active_branch.name
+                        except Exception:
+                            pass
+                        
+                        execution_result = await kernel_manager.execute_code(session_id, code, branch_name=current_branch)
                             
                             # Stream execution result
                             result_data = execution_result.to_dict()
