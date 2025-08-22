@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import StreamingChat from '../components/StreamingChat'
+import StreamingChatImproved from '../components/StreamingChatImproved'
 import BranchManager from '../components/BranchManager'
 import EnhancedCodeEditor from '../components/EnhancedCodeEditor'
 import EnhancedOutputConsole from '../components/EnhancedOutputConsole'
@@ -11,11 +11,13 @@ import ArtifactViewer from '../components/ArtifactViewer'
 import SecurityPanel from '../components/SecurityPanel'
 import PackageManager from '../components/PackageManager'
 import GitCommitPanel from '../components/GitCommitPanel'
+import BiologyTemplates from '../components/BiologyTemplates'
 import ClientOnly from '../components/ClientOnly'
 import { useSessionPersistence } from '../hooks/useSessionPersistence'
+import { getApiBaseUrl } from '../lib/api'
 
-// Use localhost since the browser runs on the host machine
-const API_URL = 'http://localhost:8000'
+// Use API utility for consistent URL handling
+const API_URL = getApiBaseUrl() || 'http://localhost:8000'
 
 export default function Home() {
   const {
@@ -114,8 +116,48 @@ plt.show()
     }
   }
 
-  const handleCodeInsert = (generatedCode: string) => {
+  const handleCodeInsert = (generatedCode: string, executeAfterInsert: boolean = false) => {
     setCode(generatedCode)
+    
+    // If executeAfterInsert is true, execute the provided code directly
+    if (executeAfterInsert) {
+      executeCodeDirect(generatedCode)
+    }
+  }
+
+  const executeCodeDirect = async (codeToExecute: string) => {
+    if (!session) {
+      setOutput('No session available. Please refresh the page.')
+      return
+    }
+    
+    setIsExecuting(true)
+    setOutput('Executing AI-generated code...')
+    
+    try {
+      const response = await axios.post(`${API_URL}/api/execute`, {
+        session_id: session.session_id,
+        query: codeToExecute,
+        is_natural_language: false,
+      })
+      
+      const result = response.data
+      const stdout = result.results?.stdout || result.stdout || ''
+      const stderr = result.results?.stderr || result.stderr || ''
+      
+      setOutput(stdout + (stderr ? '\nErrors: ' + stderr : ''))
+      
+      // Update artifacts if any were generated
+      const artifacts = result.results?.artifacts || result.artifacts || []
+      if (artifacts.length > 0) {
+        setArtifacts(artifacts)
+      }
+    } catch (error: any) {
+      console.error('Execution failed:', error)
+      setOutput(prev => prev + '\n\nExecution failed: ' + error.message)
+    } finally {
+      setIsExecuting(false)
+    }
   }
 
   const handleCodeRevert = async (commitSha: string) => {
@@ -310,9 +352,11 @@ plt.show()
                   </div>
                 }>
                   {session ? (
-                    <StreamingChat 
+                    <StreamingChatImproved 
                       sessionId={session.session_id}
                       onCodeGenerated={handleCodeInsert}
+                      currentCode={code}
+                      currentOutput={output}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-400">
@@ -361,7 +405,26 @@ plt.show()
             </div>
           </div>
 
-          {/* Third Row - Version Tree (Full Width) */}
+          {/* Third Row - Biology Templates */}
+          <div className="grid grid-cols-1 gap-6">
+            {/* Biology Templates */}
+            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-b border-white/10 p-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                  Biology Analysis Templates
+                  <span className="ml-auto text-xs bg-green-500/20 px-2 py-1 rounded-full text-green-300">
+                    BioPython • RDKit • Scanpy
+                  </span>
+                </h2>
+              </div>
+              <div className="p-4">
+                <BiologyTemplates onSelectTemplate={setCode} />
+              </div>
+            </div>
+          </div>
+
+          {/* Fourth Row - Version Tree (Full Width) */}
           <div className="grid grid-cols-1 gap-6">
             {/* Version Tree */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">

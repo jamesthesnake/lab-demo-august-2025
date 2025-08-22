@@ -27,8 +27,15 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
   const [loading, setLoading] = useState(false)
   const [branchArtifacts, setBranchArtifacts] = useState<Artifact[]>([])
 
-  // Fetch artifacts for the current branch
+  // Use passed artifacts first, then fetch from API if needed
   useEffect(() => {
+    // If we have artifacts passed as props, use them first
+    if (artifacts && artifacts.length > 0) {
+      setBranchArtifacts(artifacts)
+      return
+    }
+
+    // Otherwise, try to fetch from API
     const fetchBranchArtifacts = async () => {
       try {
         const response = await fetch(`http://localhost:8000/api/git/sessions/${sessionId}/artifacts?branch=${currentBranch}`)
@@ -49,13 +56,9 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
         if (response.ok) {
           const data = await response.json()
           setBranchArtifacts(data.artifacts || [])
-        } else {
-          // Final fallback to provided artifacts
-          setBranchArtifacts(artifacts)
         }
       } catch (error) {
         console.error('Failed to fetch workspace artifacts:', error)
-        setBranchArtifacts(artifacts)
       }
     }
 
@@ -88,12 +91,13 @@ export default function ArtifactViewer({ sessionId, artifacts, currentBranch }: 
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
-  if (artifacts.length === 0) {
+  if (branchArtifacts.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-gray-400">
         <div className="text-center">
           <FileText className="w-8 h-8 mx-auto mb-2 text-gray-500" />
           <p className="text-sm">No artifacts generated</p>
+          <p className="text-xs mt-1">Run code with plots or tables to see them here</p>
         </div>
       </div>
     )

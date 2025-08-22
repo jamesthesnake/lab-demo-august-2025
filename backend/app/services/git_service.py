@@ -1050,3 +1050,62 @@ Thumbs.db
             "current_branch": repo.active_branch.name if not repo.head.is_detached else "detached",
             "is_dirty": repo.is_dirty()
         }
+    
+    async def get_commits_by_branch(self, session_id: str, branch_name: str, limit: int = 50) -> List[CommitInfo]:
+        """
+        Get commits filtered by branch
+        
+        Args:
+            session_id: Session identifier
+            branch_name: Branch name to filter by
+            limit: Maximum number of commits to return
+            
+        Returns:
+            List of CommitInfo objects for the specified branch
+        """
+        if session_id not in self.repos:
+            return []
+        
+        repo = self.repos[session_id]
+        
+        # Check if branch exists
+        if branch_name not in [b.name for b in repo.branches]:
+            return []
+        
+        # Get commits from the specific branch
+        commits = list(repo.iter_commits(branch_name, max_count=limit))
+        
+        # Load execution history for metadata
+        history_path = os.path.join(repo.working_dir, "history.json")
+        if os.path.exists(history_path):
+            async with aiofiles.open(history_path, 'r') as f:
+                history = json.loads(await f.read())
+                executions = {e["timestamp"]: e for e in history.get("executions", [])}
+        else:
+            executions = {}
+        
+        # Convert to CommitInfo objects
+        commit_infos = []
+        for commit in commits:
+            # Try to match execution info by timestamp
+            commit_time = datetime.fromtimestamp(commit.committed_date)
+            execution_info = None
+            
+            # Find closest execution by timestamp
+            for exec_time, exec_data in executions.items():
+                if abs((datetime.fromisoformat(exec_time) - commit_time).total_seconds()) < 5:
+                    execution_info = exec_data
+                    break
+            
+            commit_infos.append(CommitInfo(
+                sha=commit.hexsha,
+                message=commit.message,
+                author=commit.author.name if commit.author else "Unknown",
+                timestamp=commit_time,
+                parent_sha=commit.parents[0].hexsha if commit.parents else None,
+                branch=branch_name,
+                files_changed=[item.a_path for item in commit.diff(commit.parents[0] if commit.parents else None)],
+                execution_info=execution_info
+            ))
+        
+        return commit_infos

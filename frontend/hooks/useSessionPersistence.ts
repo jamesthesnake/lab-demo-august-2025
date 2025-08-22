@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { getApiUrl } from '../lib/api'
 const SESSION_STORAGE_KEY = 'aido_session_id'
 
 interface SessionData {
@@ -43,7 +42,7 @@ export function useSessionPersistence() {
       
       if (storedSessionId) {
         // Try to restore the session from backend
-        const response = await axios.get(`${API_URL}/api/sessions/${storedSessionId}`)
+        const response = await axios.get(getApiUrl(`/api/sessions/${storedSessionId}`))
         
         if (response.data) {
           setSession(response.data)
@@ -66,7 +65,7 @@ export function useSessionPersistence() {
   // Create a new session
   const createNewSession = useCallback(async () => {
     try {
-      const response = await axios.post(`${API_URL}/api/sessions/create`)
+      const response = await axios.post(getApiUrl('/api/sessions/create'))
       const newSession = response.data
       
       setSession(newSession)
@@ -89,7 +88,7 @@ export function useSessionPersistence() {
     if (!session) return false
 
     try {
-      await axios.post(`${API_URL}/api/sessions/${session.session_id}/conversation`, message)
+      await axios.post(getApiUrl(`/api/sessions/${session.session_id}/conversation`), message)
       
       // Update local session state
       setSession(prev => prev ? {
@@ -112,7 +111,7 @@ export function useSessionPersistence() {
     if (!session) return false
 
     try {
-      await axios.put(`${API_URL}/api/sessions/${session.session_id}/branch`, {
+      await axios.put(getApiUrl(`/api/sessions/${session.session_id}/branch`), {
         branch,
         code
       })
@@ -144,7 +143,7 @@ export function useSessionPersistence() {
     if (!session) return false
 
     try {
-      await axios.post(`${API_URL}/api/sessions/${session.session_id}/files`, fileInfo)
+      await axios.post(getApiUrl(`/api/sessions/${session.session_id}/files`), fileInfo)
       
       // Update local session state
       setSession(prev => prev ? {
@@ -167,7 +166,7 @@ export function useSessionPersistence() {
     if (!session) return false
 
     try {
-      await axios.put(`${API_URL}/api/sessions/${session.session_id}/sandbox`, {
+      await axios.put(getApiUrl(`/api/sessions/${session.session_id}/sandbox`), {
         variables,
         imports
       })
@@ -193,7 +192,7 @@ export function useSessionPersistence() {
   const clearSession = useCallback(async () => {
     if (session) {
       try {
-        await axios.delete(`${API_URL}/api/sessions/${session.session_id}`)
+        await axios.delete(getApiUrl(`/api/sessions/${session.session_id}`))
       } catch (error) {
         console.error('Failed to delete session on backend:', error)
       }
@@ -215,7 +214,7 @@ export function useSessionPersistence() {
 
     const interval = setInterval(async () => {
       try {
-        await axios.put(`${API_URL}/api/sessions/${session.session_id}/activity`)
+        await axios.put(getApiUrl(`/api/sessions/${session.session_id}/activity`))
       } catch (error) {
         console.error('Failed to update session activity:', error)
       }

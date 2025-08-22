@@ -97,11 +97,17 @@ class FileUploadRequest(BaseModel):
     path: Optional[str] = Field(None, description="Target path in workspace")
     description: Optional[str] = Field(None, description="File description")
 
+class ResponseFormat(str, Enum):
+    """Response format options"""
+    CODE = "code"
+    CONVERSATIONAL = "conversational"
+
 class ChatRequest(BaseModel):
     """Request for chat/streaming conversation"""
     message: str = Field(..., description="User message")
     session_id: Optional[str] = Field(None, description="Session identifier")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+    response_format: ResponseFormat = Field(ResponseFormat.CODE, description="Preferred response format")
     
     @validator('message')
     def validate_message(cls, v):

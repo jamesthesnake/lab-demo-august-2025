@@ -59,7 +59,7 @@ class SimpleKernelManager:
         
         logger.info("SimpleKernelManager initialized - using direct Python execution")
     
-    async def execute_code(self, session_id: str, code: str, execution_count: int = 1, timeout: int = None) -> ExecutionResult:
+    async def execute_code(self, session_id: str, code: str, execution_count: int = 1, timeout: int = None, user_message: str = None) -> ExecutionResult:
         """Execute Python code directly via subprocess"""
         start_time = time.time()
         
@@ -70,7 +70,7 @@ class SimpleKernelManager:
             
             # Create temp file with enhanced code for artifact capture
             logger.info(f"About to enhance code for session {session_id}")
-            enhanced_code = self._enhance_code_for_artifacts(code, session_id)
+            enhanced_code = self._enhance_code_for_artifacts(code, session_id, user_message)
             logger.info(f"Enhanced code generated, length: {len(enhanced_code)}")
             logger.info(f"Enhanced code preview:\n{enhanced_code[:800]}")
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
@@ -186,9 +186,38 @@ class SimpleKernelManager:
         logger.info(f"Kernel restart requested for session: {session_id}")
         return True
 
-    def _enhance_code_for_artifacts(self, code: str, session_id: str) -> str:
+    def _enhance_code_for_artifacts(self, code: str, session_id: str, user_message: str = None) -> str:
         """Enhance code to automatically capture plots and tables"""
         try:
+            # Extract meaningful names from code context and user message
+            import re
+            
+            # Look for data file names or variable names that could be used for naming
+            data_files = re.findall(r'(?:read_csv|read_excel|read_json|load)\(["\']([^"\']+)["\']', code)
+            plot_types = re.findall(r'(?:plot|bar|hist|scatter|line|pie|box|violin|heatmap|pairplot)', code.lower())
+            
+            # Extract meaningful names from user message
+            table_context = "data"
+            if user_message:
+                # Look for specific table/data names in user message
+                table_keywords = re.findall(r'(?:table|data|dataset|analysis|stats|statistics|results|summary|report)\s+(?:of|for|about|on)\s+([a-zA-Z_][a-zA-Z0-9_]*)', user_message.lower())
+                direct_names = re.findall(r'(?:create|make|generate|show|display)\s+(?:a\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:table|data|dataset|analysis)', user_message.lower())
+                
+                if table_keywords:
+                    table_context = table_keywords[0].replace(' ', '_')
+                elif direct_names:
+                    table_context = direct_names[0].replace(' ', '_')
+                elif 'football' in user_message.lower() or 'soccer' in user_message.lower():
+                    table_context = "football"
+                elif 'sales' in user_message.lower():
+                    table_context = "sales"
+                elif 'league' in user_message.lower():
+                    table_context = "league"
+            
+            # Generate context-aware naming hints
+            file_context = data_files[0].split('/')[-1].split('.')[0] if data_files else table_context
+            plot_context = plot_types[0] if plot_types else "plot"
+            
             # Use string formatting to avoid f-string conflicts
             enhanced_code = '''
 import sys
@@ -208,13 +237,16 @@ except ImportError:
     _pandas_available = False
 
 import json
+import re
 from pathlib import Path
 
 # Set up workspace
 workspace_path = Path("/app/workspaces/{session_id}")
 workspace_path.mkdir(parents=True, exist_ok=True)
 
-# Global counters for auto-generated filenames
+# Context-aware naming
+_file_context = "{file_context}"
+_plot_context = "{plot_context}"
 _plot_counter = 0
 _table_counter = 0
 
@@ -227,7 +259,7 @@ if _matplotlib_available:
         global _plot_counter
         if plt.get_fignums():  # If there are figures
             _plot_counter += 1
-            filename = f"plot_{{_plot_counter}}.png"
+            filename = f"{{_file_context}}_{{_plot_context}}_{{_plot_counter}}.png"
             filepath = workspace_path / filename
             plt.savefig(filepath, dpi=150, bbox_inches='tight')
             print(f"📊 Plot saved: {{filename}}")
@@ -238,7 +270,7 @@ if _matplotlib_available:
         # Save to our workspace first
         if plt.get_fignums():
             _plot_counter += 1
-            filename = f"plot_{{_plot_counter}}.png"
+            filename = f"{{_file_context}}_{{_plot_context}}_{{_plot_counter}}.png"
             filepath = workspace_path / filename
             original_savefig(filepath, dpi=150, bbox_inches='tight')
             print(f"📊 Plot saved: {{filename}}")
@@ -263,12 +295,12 @@ if _pandas_available:
             _table_counter += 1
             
             # Save as CSV
-            csv_filename = f"table_{{_table_counter}}.csv"
+            csv_filename = f"{{_file_context}}_table_{{_table_counter}}.csv"
             csv_filepath = workspace_path / csv_filename
             self.to_csv(csv_filepath, index=False)
             
             # Save as JSON for better frontend display
-            json_filename = f"table_{{_table_counter}}.json"
+            json_filename = f"{{_file_context}}_table_{{_table_counter}}.json"
             json_filepath = workspace_path / json_filename
             table_data = {{
                 "columns": list(self.columns),
@@ -286,7 +318,7 @@ if _pandas_available:
 
 # User code starts here
 {user_code}
-'''.format(session_id=session_id, user_code=code)
+'''.format(session_id=session_id, file_context=file_context, plot_context=plot_context, user_code=code)
             return enhanced_code
         except Exception as e:
             logger.error(f"Error enhancing code: {e}")

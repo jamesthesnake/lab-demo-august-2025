@@ -23,6 +23,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ sessionId, onCodeI
   const [loading, setLoading] = useState(false);
   const [showCode, setShowCode] = useState<string | null>(null);
   const [history, setHistory] = useState<any>(null);
+  const [responseFormat, setResponseFormat] = useState<'code' | 'conversational'>('code');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom
@@ -68,7 +69,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ sessionId, onCodeI
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
-          message: input
+          message: input,
+          response_format: responseFormat
         })
       });
 
@@ -132,11 +134,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ sessionId, onCodeI
       <div className="bg-gray-800 px-6 py-4 border-b border-gray-700">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">AI Chat</h2>
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-400">
-              {history?.current_branch || 'main'}
-            </span>
+          <div className="flex items-center gap-4">
+            {/* Response Format Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400">Response:</span>
+              <select
+                value={responseFormat}
+                onChange={(e) => setResponseFormat(e.target.value as 'code' | 'conversational')}
+                className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="code">Code-focused</option>
+                <option value="conversational">Conversational</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <GitBranch className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-400">
+                {history?.current_branch || 'main'}
+              </span>
+            </div>
           </div>
         </div>
       </div>

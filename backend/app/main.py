@@ -166,7 +166,7 @@ app.include_router(rate_limit.router)
 app.include_router(sessions.router)
 
 # Mount workspace files for serving plots and tables
-app.mount("/workspaces", StaticFiles(directory="/app/workspaces"), name="workspaces")
+app.mount("/workspaces", StaticFiles(directory="workspaces"), name="workspaces")
 
 # Add workspace files listing endpoint
 @app.get("/api/workspaces/{session_id}/files")

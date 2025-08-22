@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { Send, Code, Play, GitBranch, FileText, Image, AlertCircle } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Send, Square, Code, Play, FileText, GitBranch, AlertCircle, Image } from 'lucide-react'
+import { getApiUrl } from '../lib/api'
 
 interface StreamEvent {
   type: string
@@ -10,14 +11,17 @@ interface StreamEvent {
 
 interface StreamingChatProps {
   sessionId: string
-  onCodeGenerated?: (code: string, autoExecute?: boolean) => void
+  onCodeGenerated?: (code: string, Execute?: boolean) => void
+  currentCode?: string
+  currentOutput?: string
 }
 
-export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingChatProps) {
+export default function StreamingChat({ sessionId, onCodeGenerated, currentCode, currentOutput }: StreamingChatProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [currentResponse, setCurrentResponse] = useState<any>({})
+  const [responseFormat, setResponseFormat] = useState<'code' | 'conversational'>('code')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -55,42 +59,42 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
   const handleSendMessage = async () => {
     if (!input.trim() || isStreaming) return
 
-    const userMessage = {
-      id: Date.now(),
-      type: 'user',
-      content: input,
-      timestamp: new Date().toISOString()
+    const userMessage = input.trim()
+    setInput('')
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setIsStreaming(true)
+    setCurrentResponse('')
+
+    // Check if user is asking about current code or output
+    const isAskingAboutCode = /\b(current code|editor|code editor|what.*code|show.*code|read.*code)\b/i.test(userMessage)
+    const isAskingAboutOutput = /\b(output|console|result|execution|what.*output|show.*output|read.*output)\b/i.test(userMessage)
+    
+    // Build context object
+    const context: any = {}
+    if (isAskingAboutCode && currentCode) {
+      context.current_code = currentCode
+    }
+    if (isAskingAboutOutput && currentOutput) {
+      context.current_output = currentOutput
     }
 
-    setMessages(prev => [...prev, userMessage])
-    const messageToSend = input
-    setInput('')
-    setIsStreaming(true)
-    setCurrentResponse({
-      id: Date.now() + 1,
-      type: 'assistant',
-      content: '',
-      code: '',
-      result: null,
-      artifacts: [],
-      branch: null,
-      commit: null,
-      timestamp: new Date().toISOString()
-    })
-
-    // Start SSE stream via POST request
     try {
-      // Use direct backend URL in development to bypass Next.js proxy issues
-      const apiUrl = process.env.NODE_ENV === 'development' 
-        ? `http://localhost:8000/api/stream/chat/${sessionId}`
-        : `/api/stream/chat/${sessionId}`
-        
-      const response = await fetch(apiUrl, {
+      const requestBody: any = {
+        message: userMessage,
+        session_id: sessionId,
+        response_format: responseFormat
+      }
+      
+      if (Object.keys(context).length > 0) {
+        requestBody.context = context
+      }
+
+      const response = await fetch(getApiUrl(`/api/stream/chat/${sessionId}`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: messageToSend })
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -182,28 +186,39 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
     }
   }
 
-  const renderMessage = (message: any) => {
-    if (message.type === 'user') {
-      return (
-        <div key={message.id} className="flex justify-end mb-4">
-          <div className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-2xl px-4 py-2 max-w-xs lg:max-w-md shadow-lg">
-            <p className="text-sm">{message.content}</p>
-          </div>
-        </div>
-      )
-    }
-
+  const renderMessage = (message: any, index: number) => {
+    if (!message) return null
+    
     return (
-      <div key={message.id} className="flex justify-start mb-6">
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-4 max-w-full shadow-2xl">
-          {/* Text Response */}
-          {message.content && (
-            <div className="text-white mb-3">
-              <div className="prose prose-invert max-w-none">
-                {message.content.split('\n').map((line, i) => (
+      <div key={message.id} className="mb-6">
+        {/* User Message */}
+        {message.userMessage && (
+          <div className="flex justify-end mb-3">
+            <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-xl border border-blue-400/30 rounded-2xl p-3 max-w-[80%] shadow-lg">
+              <div className="text-white">
+                {message.userMessage.split('\n').map((line, i) => (
                   <p key={i} className="mb-2">{line}</p>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI Response */}
+        {(message.content || message.code || message.result || message.artifacts || message.commit || message.error) && (
+          <div className="flex justify-start mb-6">
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-4 max-w-full shadow-2xl">
+              
+              {/* Text Response */}
+              {message.content && (
+                <div className="text-white mb-3">
+                  <div className="prose prose-invert max-w-none">
+                    {message.content.split('\n').map((line, i) => (
+                      <p key={i} className="mb-2">{line}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {/* Smart Code Detection */}
               {!message.code && extractCodeFromText(message.content) && (
@@ -349,9 +364,27 @@ export default function StreamingChat({ sessionId, onCodeGenerated }: StreamingC
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header with Response Format Toggle */}
+      <div className="border-b border-white/20 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-white">AI Assistant</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">Response:</span>
+            <select
+              value={responseFormat}
+              onChange={(e) => setResponseFormat(e.target.value as 'code' | 'conversational')}
+              className="bg-black/30 border border-white/20 text-white text-sm rounded-lg px-3 py-1 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all"
+            >
+              <option value="code">Code-focused</option>
+              <option value="conversational">Conversational</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map(renderMessage)}
+        {messages && messages.map(renderMessage)}
         
         {/* Current streaming response */}
         {isStreaming && Object.keys(currentResponse).length > 0 && (

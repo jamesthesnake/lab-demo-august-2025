@@ -66,9 +66,9 @@ services:
     image: aido-frontend:latest
     container_name: aido-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
-      - DOCKER_ENV=true
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      NEXT_PUBLIC_WS_URL: "ws://localhost:8000"
+      DOCKER_ENV: "true"
     volumes:
       - ./frontend:/app
       - /app/node_modules

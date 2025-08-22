@@ -60,7 +60,7 @@ async def stream_chat(
                                     "required": ["code"]
                                 }
                             }],
-                            tool_choice={"type": "auto"},
+                            tool_choice={"type": "tool", "name": "exec_python"},
                             temperature=0.7,
                             max_tokens=1500
                         )
@@ -103,7 +103,11 @@ plt.show()"""
                         else:
                             code = f"# Generated from: {request.message}\nprint('Please provide a more specific Python code request')"
                         yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
-                        yield f"{json.dumps({'type': 'complete', 'payload': 'Code generated - use Insert or Run buttons'})}\n\n"
+                        yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
+                        execution_result = await kernel_manager.execute_code(session_id, code)
+                        result_data = execution_result.to_dict()
+                        yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
+                        yield f"{json.dumps({'type': 'complete', 'payload': 'Stream completed with fallback'})}\n\n"
                         return
                     
                     # Stream LLM text response
@@ -114,15 +118,40 @@ plt.show()"""
                             code = content_block.input.get('code', '')
                             yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
                             
-                            # Only generate code, don't execute automatically
+                            # Execute code
+                            yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
+                            
+                            execution_result = await kernel_manager.execute_code(session_id, code)
+                            
+                            # Stream execution result
+                            result_data = execution_result.to_dict()
+                            yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
+                            
+                            # Save execution to git
+                            commit_info = await git_service.save_execution(
+                                session_id=session_id,
+                                code=code,
+                                results=result_data,
+                                metadata={"message": request.message}
+                            )
+                            yield f"data: {json.dumps({'type': 'commit', 'payload': {'sha': commit_info.sha, 'branch': commit_info.branch}})}\n\n"
+                            
+                            # Stream artifacts
+                            for artifact in execution_result.artifacts:
+                                if isinstance(artifact, dict) and 'filename' in artifact:
+                                    artifact_url = f"/static/artifacts/{artifact['filename']}"
+                                    yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'filename': artifact['filename'], 'type': artifact.get('type', 'unknown')}})}\n\n"
+                                elif isinstance(artifact, str):
+                                    artifact_url = f"/static/artifacts/{artifact.split('/')[-1]}"
+                                    yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'path': artifact}})}\n\n"
                 else:
                     # Adjust system prompt and tool choice based on response format
                     if request.response_format.value == "conversational":
                         system_prompt = "You are a helpful data science assistant. Provide conversational explanations and analysis. Only use tool calling when the user explicitly asks for code execution."
                         tool_choice = {"type": "auto"}
                     else:
-                        system_prompt = "You are a data science assistant. Generate Python code to solve user requests. Only generate code, do not execute it automatically."
-                        tool_choice = {"type": "auto"}
+                        system_prompt = "You are a data science assistant. Generate Python code to solve user requests. Use tool calling for code execution."
+                        tool_choice = {"type": "tool", "name": "exec_python"}
                     
                     # Build user message with context if provided
                     user_content = request.message
@@ -202,7 +231,11 @@ plt.show()"""
                         else:
                             code = f"# Generated from: {request.message}\nprint('Please provide a more specific Python code request')"
                         yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
-                        yield f"{json.dumps({'type': 'complete', 'payload': 'Code generated - use Insert or Run buttons'})}\n\n"
+                        yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
+                        execution_result = await kernel_manager.execute_code(session_id, code)
+                        result_data = execution_result.to_dict()
+                        yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
+                        yield f"{json.dumps({'type': 'complete', 'payload': 'Stream completed with fallback'})}\n\n"
                         return
                     
                     # Stream LLM text response
@@ -213,7 +246,32 @@ plt.show()"""
                             code = content_block.input.get('code', '')
                             yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
                             
-                            # Only generate code, don't execute automatically
+                            # Execute code
+                            yield f"{json.dumps({'type': 'executing', 'payload': 'Running code...'})}\n\n"
+                            
+                            execution_result = await kernel_manager.execute_code(session_id, code)
+                            
+                            # Stream execution result
+                            result_data = execution_result.to_dict()
+                            yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
+                            
+                            # Save execution to git
+                            commit_info = await git_service.save_execution(
+                                session_id=session_id,
+                                code=code,
+                                results=result_data,
+                                metadata={"message": request.message}
+                            )
+                            yield f"data: {json.dumps({'type': 'commit', 'payload': {'sha': commit_info.sha, 'branch': commit_info.branch}})}\n\n"
+                            
+                            # Stream artifacts
+                            for artifact in execution_result.artifacts:
+                                if isinstance(artifact, dict) and 'filename' in artifact:
+                                    artifact_url = f"/static/artifacts/{artifact['filename']}"
+                                    yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'filename': artifact['filename'], 'type': artifact.get('type', 'unknown')}})}\n\n"
+                                elif isinstance(artifact, str):
+                                    artifact_url = f"/static/artifacts/{artifact.split('/')[-1]}"
+                                    yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'path': artifact}})}\n\n"
             else:
                 # Fallback without LLM
                 yield f"{json.dumps({'type': 'text', 'payload': 'LLM not available. Generating basic Python code.'})}\n\n"
@@ -257,7 +315,27 @@ plt.show()"""
                 
                 yield f"{json.dumps({'type': 'code', 'payload': code})}\n\n"
                 
-                # Code generated, ready for user to execute
+                execution_result = await kernel_manager.execute_code(session_id, code)
+                result_data = execution_result.to_dict()
+                yield f"{json.dumps({'type': 'result', 'payload': result_data})}\n\n"
+                
+                # Stream artifacts
+                for artifact in execution_result.artifacts:
+                    if isinstance(artifact, dict) and 'filename' in artifact:
+                        artifact_url = f"/static/artifacts/{artifact['filename']}"
+                        yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'filename': artifact['filename'], 'type': artifact.get('type', 'unknown')}})}\n\n"
+                    elif isinstance(artifact, str):
+                        artifact_url = f"/static/artifacts/{artifact.split('/')[-1]}"
+                        yield f"data: {json.dumps({'type': 'artifact', 'payload': {'url': artifact_url, 'path': artifact}})}\n\n"
+                
+                # Save execution to git
+                commit_info = await git_service.save_execution(
+                    session_id=session_id,
+                    code=code,
+                    results=result_data,
+                    metadata={"message": request.message}
+                )
+                yield f"{json.dumps({'type': 'commit', 'payload': {'sha': commit_info.sha, 'branch': commit_info.branch}})}\n\n"
             
             yield f"{json.dumps({'type': 'complete', 'payload': 'Stream completed'})}\n\n"
             

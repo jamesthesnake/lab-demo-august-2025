@@ -81,6 +81,17 @@ export default function CodeEditor({
         </div>
         
         <div className="flex items-center gap-2">
+          {onExecute && (
+            <button
+              onClick={onExecute}
+              disabled={isExecuting}
+              className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 font-bold shadow-lg hover:shadow-green-500/25 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 text-sm"
+            >
+              <Play className="w-5 h-5" />
+              {isExecuting ? 'Running...' : 'Run Code'}
+            </button>
+          )}
+          <div className="w-px h-6 bg-white/20"></div>
           <button
             onClick={copyToClipboard}
             className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/10"
@@ -95,16 +106,6 @@ export default function CodeEditor({
           >
             <Download className="w-4 h-4" />
           </button>
-          {onExecute && (
-            <button
-              onClick={onExecute}
-              disabled={isExecuting}
-              className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 font-semibold shadow-lg hover:shadow-green-500/25 transition-all duration-300 transform hover:scale-105 flex items-center gap-2"
-            >
-              <Play className="w-4 h-4" />
-              {isExecuting ? 'Running...' : 'Run'}
-            </button>
-          )}
         </div>
       </div>
 

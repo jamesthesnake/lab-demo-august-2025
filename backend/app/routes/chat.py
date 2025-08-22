@@ -26,20 +26,29 @@ class ChatResponse(BaseModel):
     commit_hash: Optional[str] = None
     artifacts: List[str] = []
 
-SYSTEM_PROMPT = """You are AIDO Lab, a data analysis assistant. You MUST use the exec_python function for ANY request involving data analysis, computation, or visualization.
+SYSTEM_PROMPT = """You are AIDO Lab, a friendly and helpful data analysis assistant. You provide conversational responses and execute code when needed.
 
-IMPORTANT: Always use exec_python to generate and execute code. Create sample data if none is provided.
+IMPORTANT GUIDELINES:
+1. ALWAYS provide a helpful conversational response, whether executing code or not
+2. For data analysis, computation, or visualization requests: use exec_python function
+3. For general questions, explanations, or guidance: provide helpful conversational responses without code
+4. Create realistic sample data if none is provided by the user
+5. Write clean Python code with proper imports when using exec_python
+6. Handle errors gracefully and explain what went wrong
+7. After code execution, explain the results in a friendly manner
 
-When users ask for analysis, computation, or visualization:
-1. ALWAYS use the exec_python function to write and execute code
-2. Create realistic sample data if not provided by the user
-3. Write clean Python code with proper imports
-4. Create workspace directory if needed, then save plots with descriptive filenames
-5. Handle errors gracefully
+RESPONSE STYLE:
+- Always be conversational and helpful
+- For coding tasks: explain what you're about to do, then execute code, then explain results
+- For non-coding tasks: provide informative, friendly responses
+- Offer suggestions for next steps when appropriate
+- Ask clarifying questions if the request is unclear
 
 Available libraries: pandas, numpy, matplotlib, seaborn, scikit-learn, scipy
 
-Example: If asked for a bar chart, immediately use exec_python with code that creates sample data and generates the chart."""
+Examples:
+- Data request: "I'll create a bar chart for you using sample data. Let me generate that visualization..." then use exec_python
+- General question: "That's a great question! Here's how you can approach data visualization..." (no code needed)"""
 
 # OpenAI format tools
 OPENAI_TOOLS = [
@@ -92,14 +101,24 @@ async def chat(request: ChatRequest):
     
     if not llm_service:
         # Fallback: Execute code directly if it looks like Python
-        if request.message.strip().startswith(('import ', 'from ', 'print(', 'def ', 'class ')):
+        if request.message.strip().startswith(('import ', 'from ', 'print(', 'def ', 'class ', 'pd.', 'np.', 'plt.', 'sns.')):
             # Direct code execution
             result = await kernel_manager.execute_code(
                 session_id=request.session_id,
                 code=request.message
             )
+            
+            # Create a helpful response message
+            response_msg = "I've executed your Python code! "
+            if result.stdout:
+                response_msg += "Here are the results from the execution."
+            if result.artifacts:
+                response_msg += f" I also generated {len(result.artifacts)} visualization(s) for you."
+            if result.stderr:
+                response_msg += " Note: There were some warnings or errors during execution."
+            
             return ChatResponse(
-                assistant_message="Code executed successfully.",
+                assistant_message=response_msg,
                 code_executed=request.message,
                 tool_results={
                     "stdout": result.stdout,
@@ -111,7 +130,7 @@ async def chat(request: ChatRequest):
             )
         else:
             return ChatResponse(
-                assistant_message="LLM service not available. Please provide Python code directly.",
+                assistant_message="Hi! I'm AIDO Lab, your data analysis assistant. The LLM service isn't available right now, but I can still execute Python code directly. Try sending me some Python code for data analysis, visualization, or computation!",
                 code_executed=None,
                 tool_results=None,
                 artifacts=[]
@@ -127,7 +146,7 @@ async def chat(request: ChatRequest):
                 system=SYSTEM_PROMPT,
                 messages=messages,
                 tools=ANTHROPIC_TOOLS,
-                tool_choice={"type": "tool", "name": "exec_python"},
+                tool_choice="auto",  # Let the model decide whether to use tools
                 temperature=0.7,
                 max_tokens=2000
             )
@@ -177,23 +196,26 @@ async def chat(request: ChatRequest):
                     code = tool_args["code"]
                     
                     # Execute code
-                    execution_result = await kernel_manager.execute_code(
+                    result = await kernel_manager.execute_code(
                         session_id=request.session_id,
-                        code=code
+                        code=code,
+                        execution_count=1,
+                        timeout=30,
+                        user_message=request.message
                     )
                     
                     code_executed = code
                     tool_results = {
-                        "stdout": execution_result.stdout,
-                        "stderr": execution_result.stderr,
-                        "execution_count": execution_result.execution_count,
-                        "status": execution_result.status
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "execution_count": result.execution_count,
+                        "status": result.status
                     }
                     
                     # Use artifacts from execution result
-                    artifacts = execution_result.artifacts
+                    artifacts = result.artifacts
                     
-                    # Get final response from LLM
+                                # Get final response from LLM with execution results
                     if llm_service.provider.value == "anthropic":
                         # For Anthropic, append tool result and get final response
                         messages.append({
@@ -207,12 +229,13 @@ async def chat(request: ChatRequest):
                         
                         final_response = await llm_service.client.messages.create(
                             model=llm_service.model,
+                            system=SYSTEM_PROMPT + "\n\nNow provide a conversational response explaining what you did and the results.",
                             messages=messages,
                             temperature=0.7,
                             max_tokens=2000
                         )
                         
-                        final_message = final_response.content[0].text if final_response.content else "Code executed successfully."
+                        final_message = final_response.content[0].text if final_response.content else "I've executed the code successfully!"
                     else:
                         # For OpenAI
                         messages.append(assistant_message.model_dump())
@@ -221,6 +244,12 @@ async def chat(request: ChatRequest):
                             "tool_call_id": tool_call.id,
                             "name": "exec_python",
                             "content": json.dumps(tool_results)
+                        })
+                        
+                        # Add instruction for conversational response
+                        messages.append({
+                            "role": "system",
+                            "content": "Now provide a conversational response explaining what you did and the results. Be friendly and helpful."
                         })
                         
                         final_response = await llm_service.client.chat.completions.create(
@@ -236,10 +265,11 @@ async def chat(request: ChatRequest):
                     else:
                         final_message = assistant_message.content
         else:
+            # No tool calls - just conversational response
             if llm_service.provider.value == "anthropic":
                 final_message = assistant_message.content[0].text if assistant_message.content else "I can help you with that."
             else:
-                final_message = assistant_message.content
+                final_message = assistant_message.content or "I can help you with that."
         
         # Save to Git with artifacts
         commit_hash = None
